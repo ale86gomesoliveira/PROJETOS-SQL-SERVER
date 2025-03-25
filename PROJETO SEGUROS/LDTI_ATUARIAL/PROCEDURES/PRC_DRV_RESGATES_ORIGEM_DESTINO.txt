@@ -1,0 +1,659 @@
+
+CREATE PROCEDURE [dbo].[PRC_DRV_RESGATES_ORIGEM_DESTINO]
+AS
+
+BEGIN
+/*
+*********** autor: Fabio Rhormens Vicente
+*********** Data: 2021-10-07
+*********** Projeto: Transfomation Resgates
+*/
+
+--============================================================================================================
+--*************** inicia variavel de date ******************************************************************
+--============================================================================================================
+DECLARE @DATA_INICIO DATE 
+DECLARE @DATA_FIM  DATE 
+
+DECLARE @DATA_INICIO_CARNE DATE 
+DECLARE @DATA_FIM_CARNE  DATE 
+
+DECLARE @ANO AS VARCHAR(4)
+DECLARE @MES AS VARCHAR(2)
+DECLARE @ANOMES AS VARCHAR(6)
+
+
+SELECT @DATA_INICIO =  (SELECT dt_data_ini FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_XLSX_ODS_DATE_CHANGE])-- AS [PRIMEIRO DIA DO MÊS ANTERIOR]
+SELECT @DATA_FIM = EOMONTH(@DATA_INICIO) 
+
+
+SELECT @DATA_INICIO_CARNE =  (SELECT DATEADD(MM, DATEDIFF(MM,0,@DATA_INICIO) - 1, 0))-- AS [PRIMEIRO DIA DO MÊS ANTERIOR]
+SELECT @DATA_FIM_CARNE = EOMONTH(@DATA_INICIO) 
+
+SET @ANO = CONVERT(VARCHAR,YEAR(@DATA_INICIO))
+SET @MES = CONVERT(VARCHAR,MONTH(@DATA_INICIO))
+SET @ANOMES =  CONCAT(@ANO,right(CONCAT('0',RIGHT(@MES,2) ),2))
+--============================================================================================================================
+--================== INICIA PROCESSO DE PAGOS E PENDENTES ====================================================================
+--============================================================================================================================
+
+--============================================================================================================================
+--================================= INICIA PROCESSO DE PENDENTES =============================================================
+--============================================================================================================================
+IF OBJECT_ID('TEMPDB..#STEP_TDISB_PENDENTE') IS NOT NULL
+	DROP TABLE #STEP_TDISB_PENDENTE 
+
+
+SELECT *
+INTO #STEP_TDISB_PENDENTE 
+FROM (
+SELECT 
+	   A.[NM_POL_ID]
+	  ,B.NM_PLAN_ID
+      ,[DT_DISB_PAYMT_DT]
+      ,[DT_DISB_EFF_DT]
+      ,[NR_DISB_PAID_AMT]
+      ,[NM_DISB_TYP_CD]
+      ,[NM_DISB_STAT_CD]
+      ,[NM_DI_CLM_ID]
+      ,[NR_DISB_CHQ_AMT]
+      ,[NR_DISB_DUE_AMT]
+	  ,b.NR_VAL_ATU_OS_DISB
+      ,[NR_POL_INDEX_INT_AMT]
+      ,[NM_DISB_MPREM_IOF_AMT]
+      ,[NM_DISB_TAX_PAID_AMT]
+      ,[NR_CVG_NUM]
+      ,[DT_DISB_OS_DISB_DT]
+	  , 'PD'      AS NM_STATUS
+	  ,ROW_NUMBER() OVER(PARTITION BY A.[NM_POL_ID],B.NM_PLAN_ID ORDER BY A.[NM_POL_ID]) AS RN
+
+	  
+	  
+  FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_TDISB] AS A 
+  inner JOIN  [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_DINGB_TB_CAD_SURRENDER] AS B 
+	ON A.NM_POL_ID = B.NM_POL_ID 
+	AND NM_ANOMES = @ANOMES
+  WHERE NM_DISB_STAT_CD NOT IN ('CANC','RVRSD') 
+  AND NM_DISB_TYP_CD IN ('O','S','T')
+  and ((DT_DISB_PAYMT_DT > @DATA_FIM) or (DT_DISB_PAYMT_DT is null)) -- acrescentada 19/01/2021
+
+  ) AS X
+  WHERE RN = 1
+--=========================================================================================================================
+--=========================================================================================================================
+--**************************************** update nm_status olhando a data de pagamento *********************************
+update #STEP_TDISB_PENDENTE 
+set nm_status = 'PG'
+where DT_DISB_PAYMT_DT is not null
+and DT_DISB_PAYMT_DT < @DATA_FIM
+
+--==================== INICIA PROCESSO DE PAGOS ===========================================================================
+--=========================================================================================================================
+--******************************** TRATAMENTO DE TDISB ******************************************************************
+IF OBJECT_ID('TEMPDB..#TEMP_PAGOS') IS NOT NULL
+	DROP TABLE #TEMP_PAGOS 
+
+SELECT 
+	   A.[NM_POL_ID]
+	  ,a.[DT_DISB_PAYMT_DT]
+	  ,a.[DT_DISB_EFF_DT]
+	  ,SUM(a.[NR_DISB_PAID_AMT]) NR_DISB_PAID_AMT
+	  ,a.[NM_DISB_TYP_CD]
+	  ,a.[NM_DISB_STAT_CD]
+	  ,a.[NM_DI_CLM_ID]
+	  ,SUM(a.[NR_DISB_CHQ_AMT]) NR_DISB_CHQ_AMT
+	  ,SUM(a.[NR_DISB_DUE_AMT]) NR_DISB_DUE_AMT
+	  ,SUM(a.[NR_POL_INDEX_INT_AMT] ) NR_POL_INDEX_INT_AMT
+      ,a.[NM_DISB_MPREM_IOF_AMT]
+	  ,a.[NM_DISB_TAX_PAID_AMT]
+	  ,MAX(a.[NR_CVG_NUM]) AS NR_CVG_NUM
+	  ,a.[DT_DISB_OS_DISB_DT]
+	   
+	  INTO #TEMP_PAGOS 
+  FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_TDISB] A
+GROUP BY 	   
+	   A.[NM_POL_ID]
+	  ,a.[DT_DISB_PAYMT_DT]
+	  ,a.[DT_DISB_EFF_DT]
+	  ,a.[NM_DISB_TYP_CD]
+	  ,a.[NM_DISB_STAT_CD]
+	  ,a.[NM_DI_CLM_ID]
+	  ,a.[NM_DISB_MPREM_IOF_AMT]
+	  ,a.[NM_DISB_TAX_PAID_AMT]
+	  ,a.[DT_DISB_OS_DISB_DT]   
+
+
+--=========================================================================================================================================================
+IF OBJECT_ID('TEMPDB..#STEP_TDISB_PAGOS_A') IS NOT NULL
+	DROP TABLE #STEP_TDISB_PAGOS_A 
+
+BEGIN
+
+--===========================================================================================
+SELECT 
+	   A.[NM_POL_ID]
+	  ,C.NM_PLAN_ID_THI
+	  ,a.[DT_DISB_PAYMT_DT]
+      ,a.[DT_DISB_EFF_DT]
+      ,a.[NR_DISB_PAID_AMT]
+      ,a.[NM_DISB_TYP_CD]
+      ,a.[NM_DISB_STAT_CD]
+      ,a.[NM_DI_CLM_ID]
+	  ,a.[NR_DISB_CHQ_AMT]
+      ,a.[NR_DISB_DUE_AMT]
+      ,a.[NR_POL_INDEX_INT_AMT]
+      ,a.[NM_DISB_MPREM_IOF_AMT]
+      ,a.[NM_DISB_TAX_PAID_AMT]
+	  ,a.[NR_CVG_NUM]
+      ,a.[DT_DISB_OS_DISB_DT]
+	  ,C.NR_VALOR_PESO
+	  ,'PG' AS NM_STATUS
+INTO #STEP_TDISB_PAGOS_A 
+FROM #TEMP_PAGOS A
+
+INNER JOIN (SELECT
+NM_POL_ID
+,MAX(NM_PLAN_ID_THI) NM_PLAN_ID_THI
+,SUM(NR_VALOR_PESO) NR_VALOR_PESO
+FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_DRV_THI_RESGATE] 
+GROUP BY NM_POL_ID
+) AS C
+
+ON A.NM_POL_ID = C.NM_POL_ID 
+  WHERE A.NR_CVG_NUM = 0
+  AND A.NM_DISB_TYP_CD IN ('O','S','T')
+  AND A.NM_DISB_STAT_CD NOT IN ('CANC','RVRSD')
+  and A.DT_DISB_PAYMT_DT between @DATA_INICIO and @DATA_FIM 
+
+ END
+--=======================================================================================================================
+IF OBJECT_ID('TEMPDB..#STEP_TDISB_PAGOS') IS NOT NULL
+	DROP TABLE #STEP_TDISB_PAGOS
+BEGIN
+WITH CTE AS (
+SELECT
+	 B.[NM_POL_ID]
+	
+	,SUM(CONVERT(BIGINT,NR_VALOR_PESO)) AS NR_VALOR_PESO_SOMADO
+FROM #STEP_TDISB_PAGOS_A AS B
+
+GROUP BY [NM_POL_ID]
+)
+
+
+select 
+	   C.[NM_POL_ID]
+	  ,C.NM_PLAN_ID_THI
+	  ,C.[DT_DISB_PAYMT_DT]
+      ,C.[DT_DISB_EFF_DT]
+      ,C.[NR_DISB_PAID_AMT]
+      ,C.[NM_DISB_TYP_CD]
+      ,C.[NM_DISB_STAT_CD]
+      ,C.[NM_DI_CLM_ID]
+	  ,C.[NR_DISB_CHQ_AMT]
+      ,C.[NR_DISB_DUE_AMT]
+	  ,ROUND(([NR_DISB_CHQ_AMT] / NULLIF(B.NR_VALOR_PESO_SOMADO,0)) * C.NR_VALOR_PESO,2)   AS NR_DISB_CHQ_AMT_PRORATE
+	  ,C.[NR_POL_INDEX_INT_AMT]
+      ,C.[NM_DISB_MPREM_IOF_AMT]
+	  
+	  ,ROUND((CONVERT(FLOAT,[NM_DISB_MPREM_IOF_AMT]) / NULLIF(B.NR_VALOR_PESO_SOMADO,0)) * C.NR_VALOR_PESO,2)   AS [NR_DISB_MPREM_IOF_AMT_PRORATE]
+	  ,C.[NM_DISB_TAX_PAID_AMT]
+	  ,ROUND((CONVERT(FLOAT,[NM_DISB_TAX_PAID_AMT]) / NULLIF(B.NR_VALOR_PESO_SOMADO,0)) * C.NR_VALOR_PESO,2)   AS [NR_DISB_TAX_PAID_AMT_PRORATE]
+	  ,C.[NR_CVG_NUM]
+      ,C.[DT_DISB_OS_DISB_DT]
+	  ,C.NM_STATUS
+	
+
+	   INTO #STEP_TDISB_PAGOS
+from #STEP_TDISB_PAGOS_A C
+INNER JOIN CTE AS B
+	ON C.NM_POL_ID = B.NM_POL_ID
+
+
+END
+--=======================================================================================================================
+IF OBJECT_ID('TEMPDB..#STEP_A_UNION') IS NOT NULL
+	DROP TABLE #STEP_A_UNION
+
+
+SELECT 
+	   [NM_POL_ID]
+	  ,NM_PLAN_ID
+      ,[DT_DISB_PAYMT_DT]
+      ,[DT_DISB_EFF_DT]
+      ,[NR_DISB_PAID_AMT]
+      ,[NM_DISB_TYP_CD]
+      ,[NM_DISB_STAT_CD]
+      ,[NM_DI_CLM_ID]
+      ,[NR_DISB_CHQ_AMT]
+      ,[NR_DISB_DUE_AMT]
+	  ,NR_VAL_ATU_OS_DISB
+      ,[NR_POL_INDEX_INT_AMT]
+      ,[NM_DISB_MPREM_IOF_AMT]
+	  ,''                         AS NR_DISB_MPREM_IOF_AMT_PRORATE
+      ,[NM_DISB_TAX_PAID_AMT]
+	  ,''                         AS [NR_DISB_TAX_PAID_AMT_PRORATE]
+      ,[NR_CVG_NUM]
+      ,[DT_DISB_OS_DISB_DT]
+	  ,NM_STATUS
+INTO #STEP_A_UNION
+FROM #STEP_TDISB_PENDENTE
+
+UNION ALL
+
+SELECT *
+FROM #STEP_TDISB_PAGOS
+--============================================================================================================
+--============= INICIA PROCESSO DE PAGOS NUM_CVG <>0 =======================================================
+IF OBJECT_ID('TEMPDB..#STEP_B_UNION') IS NOT NULL
+	DROP TABLE #STEP_B_UNION
+
+
+SELECT 
+	   A.[NM_POL_ID]
+      ,B.NM_PLAN_ID
+	  ,[DT_DISB_PAYMT_DT]
+      ,[DT_DISB_EFF_DT]
+      ,[NR_DISB_PAID_AMT]
+      ,[NM_DISB_TYP_CD]
+      ,[NM_DISB_STAT_CD]
+      ,[NM_DI_CLM_ID]
+      ,[NR_DISB_CHQ_AMT]
+      ,[NR_DISB_DUE_AMT]
+	  ,A.[NR_DISB_PAID_AMT]                 AS NR_VAL_ATU_OS_DISB
+      ,[NR_POL_INDEX_INT_AMT]
+      ,[NM_DISB_MPREM_IOF_AMT]
+	  ,''                                 AS NR_DISB_MPREM_IOF_AMT_PRORATE
+      ,A.[NM_DISB_TAX_PAID_AMT]
+	  ,''                                 AS [NR_DISB_TAX_PAID_AMT_PRORATE]
+      ,A.[NR_CVG_NUM]
+      ,A.[DT_DISB_OS_DISB_DT]
+	  ,'PG'   AS NM_STATUS
+
+	  INTO #STEP_B_UNION
+  FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_TDISB] AS A
+  INNER JOIN [ATUARIAL_IFRS17_GAAPTI].[dbo].TB_GEPRO_ODS_TCVG AS B
+  ON A.NM_POL_ID = B.NM_POL_ID AND A.NR_CVG_NUM = B.NR_CVG_NUM
+  WHERE A.NR_CVG_NUM != 0 -- CAPTURAR OS DIFERENTES DE ZERO
+  AND NM_DISB_STAT_CD = 'PAID'
+  AND NM_DISB_TYP_CD IN ('O','S','T')
+
+---=============================================================================================
+IF OBJECT_ID('[ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_DRV_THI_TDISB]') IS NOT NULL
+	DROP TABLE [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_DRV_THI_TDISB]
+
+
+
+SELECT
+	*
+	INTO [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_DRV_THI_TDISB]
+FROM #STEP_A_UNION
+UNION ALL
+
+SELECT
+	*
+FROM #STEP_B_UNION
+
+--=========================================================================================================================
+--====================================== INICIO DO RATEIO CRIAÇÃO DE ORIGEM DESTINO =======================================
+--=========================================================================================================================
+IF OBJECT_ID('[ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_RESGATES_ORIGEM]') IS NOT NULL
+	DROP TABLE [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_RESGATES_ORIGEM]
+
+
+SELECT 
+	   TDISB.[NM_POL_ID]                                                                                         AS NM_POL_ID
+	  ,TDISB.NM_PLAN_ID
+	  ,TPOL.NM_PLAN_ID                                                                                           AS NM_PLAN_BASIC
+      ,TPOL.NM_POL_ISS_EFF_DT																					 AS NM_YEAR_MONTH_ISSUE
+	  ,TPOL.NM_POL_ISS_EFF_DT                                                                                    AS NM_POL_ISS_EFF_DT_ORIG  --Solicitação do cliente, inclusão em 23/02/2022
+      ,TDISB.[DT_DISB_PAYMT_DT]
+      ,TDISB.NR_VAL_ATU_OS_DISB                                                                                  AS NR_VAL_ATU_OS_DISB
+
+	 ,CASE 
+		WHEN DT_DISB_PAYMT_DT IS NOT NULL THEN 	round(([NR_DISB_TAX_PAID_AMT_PRORATE]) ,2) ELSE NULL  END        AS NR_DISB_PAID_AMT_FEES
+
+      ,TDISB.[NM_DISB_TYP_CD]
+      ,TDISB.[NM_DISB_STAT_CD]
+	  ,TCVG.NM_CVG_CSTAT_CD
+      ,TDISB.[NR_DISB_CHQ_AMT]
+	  ,TDISB.[NM_DISB_TAX_PAID_AMT]
+	  ,TPOLD.NM_PTNR_CO_ID
+	  ,TEDIT.[NM_ETBL_DESC_TXT]
+	  ,TPH.NM_INFLATION_INDEX
+	  ,TDISB.NM_STATUS
+
+	  INTO [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_RESGATES_ORIGEM]
+FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_DRV_THI_TDISB] AS TDISB                                --411375
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[dbo].TB_GEPRO_ODS_TPOL AS TPOL
+	ON TDISB.[NM_POL_ID] = TPOL.NM_POL_ID
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_TPOLD] AS TPOLD
+	ON TDISB.[NM_POL_ID] = TPOLD.NM_POL_ID
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_TCVG] AS TCVG
+	ON TDISB.[NM_POL_ID] = TCVG.NM_POL_ID and TDISB.NM_PLAN_ID = TCVG.NM_PLAN_ID
+
+INNER JOIN [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_TEDIT] AS TEDIT
+	ON TDISB.NM_DISB_TYP_CD = TEDIT.[NM_ETBL_VALU_ID] AND TEDIT.[NM_ETBL_TYP_ID] = 'DBSUB' AND TEDIT.[NM_ETBL_LANG_CD] = 'F'
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TPH] AS TPH
+	ON TCVG.NM_PLAN_ID = TPH.NM_PLAN_ID
+
+
+--===========================================================================================================================================
+--===========================================================================================================================================
+--*********************************** INICIA PROCESSOS DOS PENDENTES QUE NAO ESTAO NA TDISB *****************************************
+
+IF OBJECT_ID('TEMPDB..#FASE_A1')IS NOT NULL
+	DROP TABLE #FASE_A1   
+
+
+SELECT  
+       A.[NM_POL_ID]
+      ,A.[NM_PLAN_ID]
+	  ,'PLAN_BASIC'                      as  PLAN_BASIC
+      ,A.[DT_POL_OS_DISB_DT]             as [DT_POL_OS_DISB_DT]
+	  --,''                                as [DT_DISB_EFF_DT]
+	  ,''                                as [DT_DISB_PAYMT_DT]
+	  --,''                                as [NR_DISB_PAID_AMT]
+      ,A.[NR_VAL_ATU_OS_DISB]
+	  ,''                                as [NR_DISB_PAID_AMT_FEES]
+	  --,''                                as [NR_ATUALIZ_MONTH]
+      --,''                                as [NR_DISB_DUE_AMT]
+      ,''                                as [NM_DISB_TYP_CD]
+      ,''                                as [NM_DISB_STAT_CD]
+      ,''                                as [NM_CVG_CSTAT_CD]
+      ,''                                as [NR_DISB_CHQ_AMT]
+      ,''                                as [NM_DISB_TAX_PAID_AMT]
+      ,''                                as [NM_PTNR_CO_ID]
+      ,''                                as [NM_ETBL_DESC_TXT]
+      ,''                                as [NM_INFLATION_INDEX]
+      ,''                                as [NM_STATUS]
+     
+      INTO #FASE_A1
+  FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_DINGB_TB_CAD_SURRENDER] as A 
+  LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[dbo].TB_GEPRO_ODS_TDISB AS B 
+	ON A.NM_POL_ID = B.NM_POL_ID
+
+WHERE B.NM_POL_ID IS NULL and A.NM_ANOMES= @ANOMES
+
+
+--================================================================================================================================
+-- create index
+
+CREATE NONCLUSTERED INDEX [NonClusteredIndex_POL_ID_DT] ON [dbo].[TB_ATUARIAL_DRV_RESGATES_ORIGEM]
+(
+	[DT_DISB_PAYMT_DT] ASC
+)
+INCLUDE ( 	[NM_POL_ID]
+	) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+
+
+
+--=======================================================================================================
+--=================== HIGIENIZAÇÃO DE TABELA FINAL ======================================================
+--=======================================================================================================
+
+delete [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_RESGATES_ORIGEM] 
+where DT_DISB_PAYMT_DT < @DATA_INICIO
+
+--======================================================================================================
+
+UPDATE A
+SET A.[NM_INFLATION_INDEX]  = B.[NM_INFLATION_INDEX]
+FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_RESGATES_ORIGEM] AS A
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TPH] AS B
+	ON A.NM_PLAN_BASIC = B.NM_PLAN_ID
+WHERE A.NM_INFLATION_INDEX IS NULL
+
+--==========================================================================================================
+--****************** INSERI DADOS NA TABELA DE RESGATES ORIGENS ****************************************
+
+INSERT INTO [dbo].[TB_ATUARIAL_DRV_RESGATES_ORIGEM] (
+
+       [NM_POL_ID]
+      ,[NM_PLAN_ID]
+      ,[NM_PLAN_BASIC]
+      ,[NM_YEAR_MONTH_ISSUE]
+	  ,[NM_POL_ISS_EFF_DT_ORIG]  --Solicitação do cliente, inclusão em 23/02/2022
+      ,[DT_DISB_PAYMT_DT]
+      ,[NR_VAL_ATU_OS_DISB]
+      ,[NR_DISB_PAID_AMT_FEES]
+      ,[NM_DISB_TYP_CD]
+      ,[NM_DISB_STAT_CD]
+      ,[NM_CVG_CSTAT_CD]
+      ,[NR_DISB_CHQ_AMT]
+      ,[NM_DISB_TAX_PAID_AMT]
+      ,[NM_PTNR_CO_ID]
+      ,[NM_ETBL_DESC_TXT]
+      ,[NM_INFLATION_INDEX]
+      ,[NM_STATUS]
+
+)
+
+SELECT 
+	 A.[NM_POL_ID]
+	,A.[NM_PLAN_ID]
+	,TPOL.NM_PLAN_ID                                      AS [NM_PLAN_BASIC]
+	,TPOL.NM_POL_ISS_EFF_DT                               as [NM_YEAR_MONTH_ISSUE]
+	,TPOL.NM_POL_ISS_EFF_DT                               as [NM_POL_ISS_EFF_DT_ORIG]  --Solicitação do cliente, inclusão em 23/02/2022
+	,A.[DT_DISB_PAYMT_DT]
+	,A.[NR_VAL_ATU_OS_DISB]
+	,''                                                   AS [NR_DISB_PAID_AMT_FEES]
+	,A.[NM_DISB_TYP_CD]
+	,A.[NM_DISB_STAT_CD]
+	,C.[NM_CVG_CSTAT_CD]
+	,A.[NR_DISB_CHQ_AMT]
+	,A.[NM_DISB_TAX_PAID_AMT]
+	,D.[NM_PTNR_CO_ID]
+	,A.[NM_ETBL_DESC_TXT]
+	,TPH.[NM_INFLATION_INDEX]
+	,'PD'                                                 AS [NM_STATUS]
+
+
+FROM #FASE_A1 AS A
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[dbo].TB_GEPRO_ODS_TPOL AS TPOL
+	ON A.NM_POL_ID = TPOL.NM_POL_ID
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[dbo].TB_GEPRO_ODS_TCVG AS C
+	ON A.NM_POL_ID = C.NM_POL_ID AND A.NM_PLAN_ID = C.NM_PLAN_ID
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_TPOLD] AS D
+	ON A.[NM_POL_ID] = D.NM_POL_ID
+
+LEFT JOIN (select nm_plan_id, [NM_INFLATION_INDEX] FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TPH]) AS TPH
+	ON (select case
+				when a.NM_PLAN_ID is null then c.NM_PLAN_ID
+				else a.NM_PLAN_ID end) = TPH.NM_PLAN_ID
+
+--================================================================================================================================
+
+
+
+--=======================================================================================================
+--************************************* tratamento de data do DD **************************************
+--=======================================================================================================
+
+
+begin
+WITH CTE AS (
+	SELECT
+		    NM_PLAN_ID
+		   ,NM_POL_ID
+		   ,CASE
+				WHEN LEFT(NM_PLAN_ID,2) = 'DD' AND convert(date,[NM_YEAR_MONTH_ISSUE]) <= '2014-10-01' AND DATEADD(MM,121,convert(date,[NM_YEAR_MONTH_ISSUE])) <= @DATA_FIM   THEN  DATEADD(MM,121,convert(date,[NM_YEAR_MONTH_ISSUE]))
+				ELSE convert(date,[NM_YEAR_MONTH_ISSUE]) END AS [NM_YEAR_MONTH_ISSUE]
+
+      
+	FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_RESGATES_ORIGEM]
+
+)
+
+--======================================================================================================
+UPDATE A
+SET A.NM_YEAR_MONTH_ISSUE = B.NM_YEAR_MONTH_ISSUE 
+FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_RESGATES_ORIGEM] AS A
+INNER JOIN CTE AS B
+	ON A.NM_PLAN_ID = B.NM_PLAN_ID AND A.NM_POL_ID = B.NM_POL_ID
+WHERE LEFT(A.NM_PLAN_ID,2) = 'DD'
+
+end
+
+
+--======================================================================================================
+--******************* UPDATE DE CORREÇÃO DE STATUS ****************************************************
+
+  UPDATE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_RESGATES_ORIGEM]
+  SET NM_STATUS = 'PD'
+  WHERE DT_DISB_PAYMT_DT > @DATA_FIM
+
+
+--=====================================================================================================
+UPDATE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_RESGATES_ORIGEM]
+  SET DT_DISB_PAYMT_DT = null
+  WHERE DT_DISB_PAYMT_DT ='1900-01-01'
+
+--======================================================================================================
+
+update [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_RESGATES_ORIGEM]
+set nm_status = 'PG'
+where DT_DISB_PAYMT_DT is not null
+and DT_DISB_PAYMT_DT <= @DATA_FIM
+
+
+--=====================================================================================================================================================================
+--********************************************** Acrescenta as colunas ERA E COHORT na origem *************************************************************************
+--=====================================================================================================================================================================
+
+ALTER TABLE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_RESGATES_ORIGEM]
+ADD NM_GAAP_TI_NEW_COHORT VARCHAR(255), NM_GAAP_ERA VARCHAR(255)
+
+--=====================================================================================================================================================================
+--********************************************** Insere os dados de ERA E COHORT na origem ****************************************************************************
+--=====================================================================================================================================================================
+
+
+IF OBJECT_ID('tempdb..#TEMP_ERA_COHORT') IS NOT NULL
+	DROP TABLE #TEMP_ERA_COHORT 
+
+
+Select * 
+
+INTO #TEMP_ERA_COHORT
+from (
+	SELECT
+		 A.NM_POL_ID
+		,A.NM_PLAN_ID
+		,A.NM_PLAN_BASIC
+		,A.NM_YEAR_MONTH_ISSUE       /* 08/12/2022  epi na verdade é uma data NM_POL_ISS_EFF_DT (com tratamento DD ) vindo da TPOL */
+		--,concat(year(A.NM_YEAR_MONTH_ISSUE), SUBSTRING(CONVERT(VARCHAR,A.NM_YEAR_MONTH_ISSUE),6,2))  as NM_YEAR_MONTH_ISSUE /*12/05/2022  epi Converti */
+		,A.NM_POL_ISS_EFF_DT_ORIG  --Solicitação do cliente, inclusão em 23/02/2022
+		,A.DT_DISB_PAYMT_DT
+		,A.NR_VAL_ATU_OS_DISB
+		,A.NR_DISB_PAID_AMT_FEES
+		,A.[NM_DISB_TYP_CD]
+		,A.NM_DISB_STAT_CD
+		,A.NM_CVG_CSTAT_CD
+		,A.NR_DISB_CHQ_AMT
+		,A.NM_DISB_TAX_PAID_AMT
+		,A.NM_PTNR_CO_ID
+		,A.NM_ETBL_DESC_TXT
+		,A.NM_INFLATION_INDEX
+		,A.NM_STATUS
+		,B.NM_GAAP_TI_NEW_COHORT
+		,C.NM_GAAP_Era              AS NM_GAAP_ERA
+		,ROW_NUMBER()OVER(PARTITION BY [NM_POL_ID],A.[NM_PLAN_ID],[NM_PLAN_BASIC], NM_YEAR_MONTH_ISSUE, DT_DISB_PAYMT_DT, NR_VAL_ATU_OS_DISB, NR_DISB_PAID_AMT_FEES, NM_DISB_STAT_CD, NM_CVG_CSTAT_CD, NR_DISB_CHQ_AMT, NM_DISB_TAX_PAID_AMT, NM_PTNR_CO_ID, NM_ETBL_
+DESC_TXT, NM_INFLATION_INDEX, NM_STATUS, b.NM_GAAP_TI_NEW_COHORT, c.NM_GAAP_Era ORDER BY [NM_POL_ID]) RN
+
+	FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_RESGATES_ORIGEM] AS A
+	LEFT JOIN [ATUARIAL_IFRS17_GAAPTI]..[TB_XLSX_ODS_COHORTGROUPXPLANID] AS B
+		ON (SELECT CASE
+			WHEN A.NM_PLAN_ID LIKE '%ETI%' THEN NM_PLAN_BASIC
+			WHEN A.NM_PLAN_ID LIKE '%RPU%' THEN NM_PLAN_BASIC
+			ELSE A.NM_PLAN_ID
+			END  AS NM_PLAN_ID)  = ltrim(rtrim(CONVERT(VARCHAR(50),B.NM_PLAN_ID))) 
+
+	LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_XLSX_ODS_ERA] AS C
+		ON A.NM_YEAR_MONTH_ISSUE BETWEEN C.DT_START_DATE AND C.DT_END_DATE
+
+	where A.NM_PLAN_ID = B.NM_PLAN_ID) a
+where RN = 1
+
+
+
+--=====================================================================================================================================================================
+--********************************************** Recria a tabela de dados de Origem ***********************************************************************************
+--=====================================================================================================================================================================
+
+IF OBJECT_ID('[ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_RESGATES_ORIGEM]') IS NOT NULL
+	DROP TABLE [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_RESGATES_ORIGEM] 
+
+SELECT
+	*
+	INTO [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_RESGATES_ORIGEM]
+FROM #TEMP_ERA_COHORT
+
+
+
+--======================================================================================================
+--========================== DESTINO ===================================================================
+--======================================================================================================
+
+IF OBJECT_ID('[ATUARIAL_IFRS17_GAAPTI]..TB_ATUARIAL_DRV_RESGATES_DESTINO') IS NOT NULL
+	DROP TABLE [ATUARIAL_IFRS17_GAAPTI]..TB_ATUARIAL_DRV_RESGATES_DESTINO 
+
+SELECT  
+	CASE	
+		WHEN ORI.NM_STATUS = 'PD' THEN 'SURRENDER DUE'  ELSE 'SURRENDER PAID' END AS [TYPE]
+	 ,''      AS CLAIM_CATEGORY
+	
+	,COH.NM_GAAP_TI_NEW_COHORT
+	,PLANPOB.NM_FAS_
+	,ORI.NM_INFLATION_INDEX
+	,ERA.NM_GAAP_ERA
+	,CONCAT(YEAR(@DATA_INICIO),SUBSTRING(CONVERT(VARCHAR,@DATA_INICIO),6,2)) AS NM_YEAR_MONTH
+	,SUM(ISNULL(NR_VAL_ATU_OS_DISB, 0) + ISNULL(NR_DISB_PAID_AMT_FEES,0))    AS AMOUNT
+	,'' AS NM_YEAR_MONTH_ISSUE            /* 08/12/2022 epi mudaram de ideia e quer mandar para destino em branco, na verdade é uma data NM_POL_ISS_EFF_DT (com tratamento DD ) vindo da TPOL */
+	INTO [ATUARIAL_IFRS17_GAAPTI]..TB_ATUARIAL_DRV_RESGATES_DESTINO
+FROM [ATUARIAL_IFRS17_GAAPTI]..TB_ATUARIAL_DRV_RESGATES_ORIGEM AS ORI
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI]..TB_XLSX_ODS_COHORTGROUPXPLANID AS COH
+	ON (SELECT CASE
+		WHEN ORI.NM_PLAN_ID LIKE '%ETI%' THEN NM_PLAN_BASIC
+		WHEN ORI.NM_PLAN_ID LIKE '%RPU%' THEN NM_PLAN_BASIC
+		ELSE ORI.NM_PLAN_ID
+		END  AS NM_PLAN_ID)  = ltrim(rtrim(CONVERT(VARCHAR(50),COH.NM_PLAN_ID))) 
+	
+
+LEFT JOIN (
+	
+SELECT 
+	 NM_PLAN_ID
+	,NM_FAS_
+FROM(
+	SELECT
+		NM_PLAN_ID
+		,NM_FAS_
+		,ROW_NUMBER() OVER(PARTITION BY NM_PLAN_ID ORDER BY NM_PLAN_ID) RN	
+	FROM TB_XLSX_ODS_COD_PLAN_POB
+
+) AS X WHERE RN = 1
+) AS PLANPOB
+	ON (SELECT CASE
+		WHEN ORI.NM_PLAN_ID LIKE '%ETI%' THEN NM_PLAN_BASIC
+		WHEN ORI.NM_PLAN_ID LIKE '%RPU%' THEN NM_PLAN_BASIC
+		ELSE ORI.NM_PLAN_ID
+		END  AS NM_PLAN_ID) = PLANPOB.NM_PLAN_ID
+
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_XLSX_ODS_ERA] AS ERA
+	ON ORI.NM_YEAR_MONTH_ISSUE BETWEEN ERA.DT_START_DATE AND ERA.DT_END_DATE        /* 08/12/2022 epi na verdade ainda é uma data NM_POL_ISS_EFF_DT (com tratamento DD ) vindo da TPOL */
+GROUP BY 
+	CASE	
+		WHEN ORI.NM_STATUS = 'PD' THEN 'SURRENDER DUE'  ELSE 'SURRENDER PAID' END
+	,COH.NM_GAAP_TI_NEW_COHORT
+	,PLANPOB.NM_FAS_
+	,ORI.NM_INFLATION_INDEX
+	,ERA.NM_GAAP_ERA
+	--,NM_YEAR_MONTH_ISSUE  --NOVO CAMPO REQUISITO 1  /*12/05/2022 epi Na EDS pag 10 incluir essa coluna no destino */

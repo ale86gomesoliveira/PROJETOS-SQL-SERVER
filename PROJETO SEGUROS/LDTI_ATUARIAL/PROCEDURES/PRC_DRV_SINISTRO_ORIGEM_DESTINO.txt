@@ -1,0 +1,1487 @@
+
+Text
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+CREATE   PROCEDURE [dbo].[PRC_DRV_SINISTRO_ORIGEM_DESTINO]
+AS
+
+BEGIN
+/*
+*********** AUTOR: FABIO RHORMENS VICENTE
+*********** DATA: 2021-10-07
+*********** PROJETO: TRANSFOMATION RESGATES
+*/
+
+--============================================================================================================
+--*************** INICIA VARIAVEL DE DATE ******************************************************************
+--============================================================================================================
+DECLARE @DATA_INICIO DATE 
+DECLARE @DATA_FIM  DATE 
+
+DECLARE @DATA_INICIO_CARNE DATE 
+DECLARE @DATA_FIM_CARNE  DATE 
+
+DECLARE @ANO AS VARCHAR(4)
+DECLARE @MES AS VARCHAR(2)
+DECLARE @ANOMES AS VARCHAR(6)
+
+-- AS [PRIMEIRO DIA DO MÊS ANTERIOR]
+SELECT @DATA_INICIO =  (SELECT DT_DATA_INI FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_XLSX_ODS_DATE_CHANGE])
+SELECT @DATA_FIM = EOMONTH(@DATA_INICIO) 
+
+-- AS [PRIMEIRO DIA DO MÊS ANTERIOR]
+SELECT @DATA_INICIO_CARNE =  (SELECT DATEADD(MM, DATEDIFF(MM,0,@DATA_INICIO) - 1, 0))
+SELECT @DATA_FIM_CARNE = EOMONTH(@DATA_INICIO) 
+
+SET @ANO = CONVERT(VARCHAR,YEAR(@DATA_INICIO))
+SET @MES = CONVERT(VARCHAR,MONTH(@DATA_INICIO))
+SET @ANOMES =  CONCAT(@ANO,right(CONCAT('0',RIGHT(@MES,2) ),2))
+
+
+--==============================================================================================
+---------------------------- HIGIENIZA BENEFICIOS PAGOS ----------------------------------------
+--==============================================================================================
+
+IF OBJECT_ID ('TEMPDB..#TEMP_SOMADO') IS NOT NULL
+	DROP TABLE #TEMP_SOMADO 
+SELECT 
+	nm_APOLICE
+	,NM_COD_BENEF
+	,NM_SINISTRO
+	,tdisb.NM_DISB_TYP_CD
+	,sum(NM_CS_BEN_COB) AS COB 
+into #TEMP_SOMADO
+FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_BENEFICIOS] a
+inner join [ATUARIAL_IFRS17_GAAPTI].[dbo].TB_GEPRO_ODS_TDISB as tdisb
+	on a.NM_APOLICE = tdisb.NM_POL_ID and tdisb.NM_DI_CLM_ID = a.NM_SINISTRO and a.NM_COD_BENEF = tdisb.NM_CLI_ID  and tdisb.NM_DISB_TYP_CD <> 'F' -- Data 02/02/2022 - Alteração de filtro para colocar o 'F' -- epi016 chave tripla
+GROUP BY nm_APOLICE,NM_COD_BENEF,NM_SINISTRO, tdisb.NM_DISB_TYP_CD
+
+--==================================================================================
+
+IF OBJECT_ID('TEMPDB..#TEMP_PRINCIPAL') IS NOT NULL
+	DROP TABLE #TEMP_PRINCIPAL 
+
+
+SELECT 
+    A.[NM_SIN_JUR] AS NM_JUDICIAL                    --JUDICIAL
+	,A.[NM_ST_SNTR]
+	,A.[NM_PROPOSTA]
+	,A.[NM_SINISTRO]
+	,A.[NM_APOLICE]
+	,A.[NM_COBERTURA]
+	,A.[NM_COD_SEGURADO]
+	,A.[NM_COD_BENEF]
+	,A.[NM_TP_SINISTRO]
+	,A.[NM_MODULO]
+	,A.[NM_RAMO]
+	--,A.[NM_CANAL]                                            AS NM_CANAL_DISTRIBUICAO       --CANAL DE DISTRIBUICAO
+	,A.[DT_VIGENCIA]
+	,A.[DT_EMISSAO]
+	,A.[DT_EVENTO]                                          AS DT_OCORRENCIA                -- DT_OCORRENCIA
+	,A.[DT_CLM_CREAT_DT]
+	,A.[DT_AVISO]                                                                           ---DT_AVISO
+	,A.[NR_VLR_AVISO]                                       AS NR_VLR_BENEFICIO             --VALOR DO BENEFICIO
+	,A.[NM_PCT_BENE]
+	,A.[NM_CS_BEN_COB]
+	,A.[NM_PG_POR_BEN]
+	,A.[NM_VLR_RESEGURO]
+	,A.[NM_VLR_RESERVA]
+	,A.[NM_VLR_MULTA]
+	,A.[NM_VLR_JUROS]  
+	,A.[NM_VLR_JUROS_CORR]                                   AS NR_JUROS_CORR                --JUROS
+	,A.[NM_IND_JUROS]
+	,A.[DT_PAGAMENTO]
+	,tdisb.NM_DISB_TYP_CD
+	,A.DT_CLI_BTH_DT  
+	,A.[DT_RETORNO_RECIBO]                                    AS DT_RETORNO_RECIBO
+
+INTO #TEMP_PRINCIPAL
+FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_BENEFICIOS] AS A 
+inner join TB_GEPRO_ODS_TDISB as tdisb
+	on a.NM_APOLICE = tdisb.NM_POL_ID and tdisb.NM_DI_CLM_ID = A.NM_SINISTRO and tdisb.nm_cli_id = A.NM_COD_BENEF   --EPI016 20/DEZ/22 CHAVE TRIPLA
+WHERE  tdisb.NM_DISB_TYP_CD NOT IN ('P','F') -- Data 02/02/2022 - Alteração de filtro para colocar o 'F'
+--================================================================================================================================================  
+IF OBJECT_ID('tempdb..#BENEFICIOS') is not null
+	drop table #BENEFICIOS
+
+
+SELECT 
+	A.* 
+	,((A.[NM_PG_POR_BEN] / B.COB) * (A.NM_CS_BEN_COB)) AS [NM_CS_BEN_COB_ATU]
+
+into #BENEFICIOS
+FROM #TEMP_PRINCIPAL AS A
+INNER JOIN #TEMP_SOMADO AS B
+	ON A.NM_APOLICE = B.NM_APOLICE AND A.NM_COD_BENEF = B.NM_COD_BENEF AND A.NM_SINISTRO = B.NM_SINISTRO AND A.NM_DISB_TYP_CD = B.NM_DISB_TYP_CD 
+
+
+--========================================================================================
+IF OBJECT_ID('ATUARIAL_IFRS17_GAAPTI..TB_ATUARIAL_DRV_SINISTROS_AVISADOS_PAGOS') IS NOT NULL
+	DROP TABLE  TB_ATUARIAL_DRV_SINISTROS_AVISADOS_PAGOS
+
+SELECT 
+	 [NM_APOLICE]
+	,[NM_COBERTURA]
+	,NM_JUDICIAL
+	--,NM_CANAL_DISTRIBUICAO
+	,DT_OCORRENCIA
+	,DT_AVISO
+	,[NM_TP_SINISTRO]
+	,[DT_VIGENCIA]
+	,DT_CLI_BTH_DT
+	,DT_PAGAMENTO                                AS DT_DT_PAGTO
+	,NR_VLR_BENEFICIO
+	,[NM_SINISTRO]
+	,[NM_VLR_RESEGURO]
+	,[NM_VLR_RESERVA]
+	,[NM_PG_POR_BEN]
+	,[NM_CS_BEN_COB]
+	,NR_JUROS_CORR
+	,[NM_CS_BEN_COB_ATU]
+	,NM_COD_BENEF
+	,CASE
+		WHEN NM_ST_SNTR = 'PAID AND RECVED'                THEN 'PAGOS'
+		WHEN NM_ST_SNTR = 'PARTIAL PAID'                   THEN 'PAGOS'
+		WHEN NM_ST_SNTR = 'NOTICE'                         THEN 'AVISADOS'
+		WHEN NM_ST_SNTR = 'APPROVED'                       THEN 'AVISADOS'
+		ELSE 'CANCELADO' END                               AS NM_TIPO
+	,DT_RETORNO_RECIBO
+
+INTO TB_ATUARIAL_DRV_SINISTROS_AVISADOS_PAGOS
+FROM #BENEFICIOS 
+
+--============================================================================================================================
+
+--DELETE FROM TB_ATUARIAL_DRV_SINISTROS_AVISADOS_PAGOS
+--WHERE NM_TIPO = 'CANCELADO'
+
+--============================================================================================================================
+--================== INICIA AGRUPAMENTO AVISADOS E PAGOS =====================================================================
+IF OBJECT_ID('TEMPDB..#UNIFICADO') IS NOT NULL
+	DROP TABLE #UNIFICADO 
+
+SELECT 
+    [NM_APOLICE]
+    ,[NM_COBERTURA]
+    ,[NM_TP_SINISTRO]
+    ,NM_COD_BENEF
+    ,NM_JUDICIAL
+    --,NM_CANAL_DISTRIBUICAO
+    ,DT_CLI_BTH_DT                               AS DT_CLI_BTH_DT
+    ,MAX(DT_OCORRENCIA)                               AS DT_OCORRENCIA
+    ,MAX(DT_AVISO		)                               AS DT_AVISO
+    ,MAX ([DT_VIGENCIA])                              AS [DT_DT_VIGENCIA]
+    ,MAX ([DT_DT_PAGTO]	)                           AS [DT_DT_PAGTO]
+    ,MAX ([DT_RETORNO_RECIBO]	)                       AS [DT_RETORNO_RECIBO]
+    ,[NM_SINISTRO]
+    ,SUM ([NM_VLR_RESEGURO])                          AS [NR_VLR_RESEGURO]
+    ,SUM ([NM_VLR_RESERVA]  )                         AS [NR_VLR_RESERVA]
+    ,SUM ([NM_CS_BEN_COB_ATU]	  )                     AS [NM_CS_BEN_COB_ATU]
+    ,sum(NR_VLR_BENEFICIO)                                as NR_VLR_AVISO 
+    ,SUM(NR_JUROS_CORR)                               AS NR_JUROS_CORR
+    ,[NM_TIPO]
+
+  INTO #UNIFICADO 
+  FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTROS_AVISADOS_PAGOS]
+  GROUP BY 
+  NM_APOLICE, 
+  NM_COBERTURA, 
+  NM_TP_SINISTRO, 
+  NM_SINISTRO, 
+  NM_TIPO,
+  NM_COD_BENEF,
+  NM_JUDICIAL, /*,NM_CANAL_DISTRIBUICAO*/
+  DT_CLI_BTH_DT
+
+
+--============================================================================================================================
+--================== INICIA PROCESSO DE PAGOS E AVISADOS ===================================================================
+
+IF OBJECT_ID('TEMPDB..#STEP_TDISB') IS NOT NULL
+	DROP TABLE #STEP_TDISB 
+
+
+SELECT *
+INTO #STEP_TDISB
+FROM (
+SELECT 
+    B.[NM_APOLICE]                       as [NM_POL_ID]
+    ,B.NM_COBERTURA                       AS NM_PLAN_ID
+    ,B.[NM_TP_SINISTRO]                     AS NM_CLAIM_CATEGORY
+    ,B.NM_COD_BENEF
+    --,B.NM_CANAL_DISTRIBUICAO
+    ,B.DT_OCORRENCIA
+    ,B.NM_JUDICIAL
+    ,B.DT_AVISO
+    ,DT_CLI_BTH_DT
+    ,B.DT_DT_PAGTO                  AS DT_DISB_PAYMT_DT
+    ,B.[DT_RETORNO_RECIBO]
+    ,[DT_DISB_EFF_DT]
+    ,[NR_DISB_PAID_AMT]
+    ,[NM_DISB_TYP_CD]
+    ,A.[NM_DI_CLM_ID]
+    ,A.[NR_DISB_CHQ_AMT]
+    ,A.[NR_DISB_DUE_AMT]
+    ,B.[NR_VLR_RESEGURO]
+    ,b.NR_VLR_AVISO
+    ,B.NR_JUROS_CORR
+    -- ,CASE	
+    --WHEN A.DT_DISB_PAYMT_DT IS NULL THEN B.NM_PG_POR_BEN
+    --ELSE A.NR_DISB_CHQ_AMT   END            AS NR_VAL_ATU_OS_DISB
+
+    ,CASE 
+        WHEN B.NM_TIPO = 'AVISADOS' THEN B.NR_VLR_AVISO
+        WHEN B.NM_TIPO = 'CANCELADO' THEN B.NR_VLR_AVISO
+        ELSE B.[NM_CS_BEN_COB_ATU] END   AS NR_VAL_ATU_OS_DISB
+    --,b.[NM_CS_BEN_COB_ATU]                   AS NR_VAL_ATU_OS_DISB
+    ,a.[NR_POL_INDEX_INT_AMT]
+    ,a.[NM_DISB_MPREM_IOF_AMT]
+    ,a.[NM_DISB_TAX_PAID_AMT]
+    ,a.[NR_CVG_NUM]
+    ,a.[DT_DISB_OS_DISB_DT]
+    ,CONVERT(FLOAT,ROUND((NR_DISB_PAID_AMT -[NR_DISB_CHQ_AMT]),2))  as NR_LOAN   --EPI 30DEZ TIREI CLM_AMT E VOLTEI ANTIGO NR_DISB_PAID_AMT
+    , CASE 
+        WHEN B.NM_TIPO = 'AVISADOS' THEN 'PD' 
+        WHEN B.NM_TIPO = 'CANCELADO' THEN 'PD'
+        ELSE 'PG' END    AS NM_STATUS
+    ,ROW_NUMBER() OVER(PARTITION BY A.[NM_POL_ID],B.NM_COBERTURA, NM_DI_CLM_ID,NM_COD_BENEF ORDER BY A.[NM_POL_ID]) AS RN
+
+from #UNIFICADO as B
+  --FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTROS_AVISADOS_PAGOS] AS B	  
+  --FROM TB_ATUARIAL_DRV_SINISTROS_AVISADOS_PAGOS AS B
+LEFT JOIN  [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TDISB] AS A
+	ON A.NM_POL_ID = B.NM_APOLICE AND CONVERT(INT, A.NM_DI_CLM_ID) = B.NM_SINISTRO /* A.NM_DI_CLM_ID = B.NM_SINISTRO */ and A.nm_cli_id = B.NM_COD_BENEF   --EPI016 20/DEZ/22 CHAVE TRIPLA
+WHERE NM_DISB_TYP_CD NOT IN ('P','F') --AND DATAPAGAMENTO BETWWEWE -- Data 02/02/2022 - Alteração de filtro para colocar o 'F'
+  ) AS X
+WHERE RN = 1
+
+
+
+--=========================================================================================================================
+--====================================== INICIO DO RATEIO CRIAÇÃO DE ORIGEM DESTINO =======================================
+--=========================================================================================================================
+
+IF OBJECT_ID('[ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]') IS NOT NULL
+	DROP TABLE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+
+
+SELECT 
+    TDISB.[NM_POL_ID]                                                                                         AS NM_POL_ID
+    ,TDISB.NM_PLAN_ID
+    ,TPOL.NM_PLAN_ID                                                                                           AS NM_PLAN_BASIC
+    ,TCVG.NM_CVG_SEX_CD                                                                                        AS NM_SEXO
+    ,NM_COD_BENEF
+    ,NM_JUDICIAL
+    --,NM_CANAL_DISTRIBUICAO
+    ,TDISB.NM_CLAIM_CATEGORY     
+    ,TPOL.NM_POL_ISS_EFF_DT																				AS [NM_YEAR_MONTH_ISSUE]																					
+    ,TPOL.NM_POL_ISS_EFF_DT                                                                                AS NM_POL_ISS_EFF_DT_ORIG 
+    ,DT_OCORRENCIA
+    ,DT_AVISO
+	,DT_CLI_BTH_DT				-- nova adicao
+    ,DATEDIFF(YEAR,DT_CLI_BTH_DT,DT_OCORRENCIA)                                                                AS DT_IDADE_SINISTRO
+    ,DATEDIFF(YEAR,TPOL.NM_POL_ISS_EFF_DT,DT_OCORRENCIA)                                                       AS DT_ANOS_ATE_SINISTRO
+    ,TDISB.[DT_DISB_PAYMT_DT]
+    ,TDISB.[DT_RETORNO_RECIBO]
+    ,ROUND(TDISB.NR_VAL_ATU_OS_DISB,2)                                                                                  AS NR_VAL_ATU_OS_DISB
+    ,[NR_VLR_RESEGURO]
+    ,NR_JUROS_CORR
+    ,NR_VLR_AVISO
+    ,ROUND(CONVERT(FLOAT,NR_LOAN),2)                                   AS NR_LOAN
+    --,CASE 
+    --WHEN DT_DISB_PAYMT_DT IS NOT NULL THEN 	ROUND(([NR_DISB_TAX_PAID_AMT_PRORATE]) ,2) ELSE NULL  END AS  NR_DISB_PAID_AMT_FEES
+    --,TDISB.[NR_DISB_DUE_AMT] 
+    ,TDISB.[NM_DISB_TYP_CD]
+    ,TCVG.NM_CVG_CSTAT_CD
+    ,TDISB.[NM_DI_CLM_ID]
+    ,TDISB.[NR_DISB_CHQ_AMT]
+    ,CONVERT(FLOAT,TDISB.[NM_DISB_TAX_PAID_AMT]) AS NM_DISB_TAX_PAID_AMT
+    ,TPOLD.NM_PTNR_CO_ID
+    ,TEDIT.[NM_ETBL_DESC_TXT]
+    ,TPH.NM_INFLATION_INDEX
+    ,TDISB.NM_STATUS
+    ,'SISTEMICO'                                                 AS NM_TIPO
+
+
+	  INTO [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+FROM #STEP_TDISB  AS TDISB                          
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].TB_GEPRO_ODS_TPOL AS TPOL
+	ON TDISB.[NM_POL_ID] = TPOL.NM_POL_ID
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TPOLD] AS TPOLD
+	ON TDISB.[NM_POL_ID] = TPOLD.NM_POL_ID
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TCVG] AS TCVG
+	ON TDISB.[NM_POL_ID] = TCVG.NM_POL_ID AND TDISB.NM_PLAN_ID = TCVG.NM_PLAN_ID
+
+INNER JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TEDIT] AS TEDIT
+	ON TDISB.NM_DISB_TYP_CD = TEDIT.[NM_ETBL_VALU_ID] AND TEDIT.[NM_ETBL_TYP_ID] = 'DBSUB' AND TEDIT.[NM_ETBL_LANG_CD] = 'F'
+	
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TPH] AS TPH
+	ON TCVG.NM_PLAN_ID = TPH.NM_PLAN_ID
+
+-------------------------------------------------------------------------------------------
+-- Seleciona todas as apolices sistemicas que tem LOAN no MES de referencia e atualiza LOAN
+-------------------------------------------------------------------------------------------
+IF OBJECT_ID('TEMPDB..#LOAN') IS NOT NULL
+	DROP TABLE #LOAN 
+
+select TCPMT.POL_ID, TCPMT.DI_CLM_ID , TCPMT.CLI_ID, TCPMT.LOAN_DED_AMT  
+	INTO #LOAN
+	from  TB_GEPRO_ODS_TCPMT as TCPMT
+			 where TCPMT.CLM_PMT_TYP  = 'CP' and TCPMT.CLM_PMT_CSTAT_CD = 'A'								            
+					and LEFT(REPLACE(TCPMT.CLM_PMT_DT, '-', ''),6) = LEFT(REPLACE(@DATA_INICIO, '-', ''),6)  
+					and TCPMT.LOAN_DED_AMT <> 0    
+
+-- ATUALIZA  NR_LOAN COM VALOR CORRETO DA TCPMT POR APOLICE, NUMERO DE SINISTRO E BENEFICIARIO 
+UPDATE A
+SET A.NR_LOAN = ISNULL(B.LOAN_DED_AMT,0)  
+FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+LEFT JOIN #LOAN AS B
+	ON A.NM_POL_ID = B.POL_ID AND A.NM_DI_CLM_ID = B.DI_CLM_ID AND A.NM_COD_BENEF = B.CLI_ID
+WHERE A.NR_LOAN <> 0 
+
+
+-------------------------------------------------------------------------------------
+
+begin
+
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD NR_QTD_DIARIAS_RENDA_HOSPITALAR INT
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD NR_QTD_DIARIAS_UTI INT
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD NR_VALOR_DA_DIARIA FLOAT
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD CLM_TOT_AMT DECIMAL(13,2)
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD PREM_DED_AMT DECIMAL(13,2) 
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD DED_FLASH_AMT DECIMAL(13,2)
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD CLM_PD_AMT DECIMAL(13,2)
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD LOAN_DED_AMT DECIMAL(13,2)
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD APL_DED_AMT DECIMAL(13,2)
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD DIV_AMT DECIMAL(13,2)
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD INT_DIV_AMT DECIMAL(13,2)
+--ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD DT_CLI_BTH_DT DATE  -- nova adicao
+--ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD NM_POL_ISS_EFF_DT VARCHAR(10)
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD COVID VARCHAR(10)
+end
+--================================================================================================================================
+-- CREATE INDEX
+
+CREATE NONCLUSTERED INDEX [NONCLUSTEREDINDEX_POL_ID_DT] ON [DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+(
+	[DT_DISB_PAYMT_DT] ASC
+)
+INCLUDE ( 	[NM_POL_ID]
+	) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+
+
+
+--=======================================================================================================
+--=================== HIGIENIZAÇÃO DE TABELA FINAL ======================================================
+--=======================================================================================================
+
+DELETE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] 
+WHERE [DT_RETORNO_RECIBO] < @DATA_INICIO
+AND [DT_RETORNO_RECIBO] IS NOT NULL
+
+
+--=======================================================================================================
+--************************************* TRATAMENTO DE DATA DO DD **************************************
+--=======================================================================================================
+
+BEGIN
+WITH CTE AS (
+	SELECT
+		    NM_PLAN_ID
+		   ,NM_POL_ID
+		   ,CASE
+				WHEN LEFT(NM_PLAN_ID,2) = 'DD' AND CONVERT(DATE,[NM_YEAR_MONTH_ISSUE]) <= '2014-10-01' AND DATEADD(MM,121,CONVERT(DATE,[NM_YEAR_MONTH_ISSUE])) <= @DATA_FIM   THEN  DATEADD(MM,121,CONVERT(DATE,[NM_YEAR_MONTH_ISSUE]))
+				--WHEN LEFT(NM_PLAN_ID,2) = 'DD' AND DATEADD(MM,121,CONVERT(DATE,[NM_POL_ISS_EFF_DT])) > @DATA_FIM  THEN CONVERT(DATE,[NM_POL_ISS_EFF_DT]) 
+
+				ELSE CONVERT(DATE,[NM_YEAR_MONTH_ISSUE]) END AS [NM_POL_ISS_EFF_DT]
+
+      
+	FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+
+)
+
+--======================================================================================================
+UPDATE A
+SET A.[NM_YEAR_MONTH_ISSUE] = B.NM_POL_ISS_EFF_DT 
+FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+INNER JOIN CTE AS B
+	ON A.NM_PLAN_ID = B.NM_PLAN_ID AND A.NM_POL_ID = B.NM_POL_ID
+WHERE LEFT(A.NM_PLAN_ID,2) = 'DD'
+
+END
+
+--======================================================================================================
+--******************* UPDATE DE CORREÇÃO DE STATUS ****************************************************
+
+  UPDATE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+  SET NM_STATUS = 'PD'
+  WHERE DT_DISB_PAYMT_DT > @DATA_FIM
+
+  --SE O POL_ID FOR DE DATA MAIOR QUE DATA DO RELATORIO ELE É PENDENTE PARA AQUELE MES
+
+--======================================================================================================
+UPDATE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+  SET DT_DISB_PAYMT_DT = NULL
+  WHERE DT_DISB_PAYMT_DT ='1900-01-01'
+
+
+--ONDE TEM SUJEIRA DE DATA TRANSFORMA EM NULL 
+ 
+--======================================================================================================= 
+ 
+ UPDATE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+  SET NM_STATUS = 'PD'
+  WHERE DT_DISB_PAYMT_DT IS NULL
+
+-- SE NAO TEM DATA DE PAGAMENTO ELE É PENDENTE
+--================================================================================================================================
+--================================================================================================================================
+
+END
+
+/*
+*******************************************************************************************************************************
+*******************************************************************************************************************************
+                         INICIO DE PROCESSOS MANUAIS
+*******************************************************************************************************************************
+*******************************************************************************************************************************
+
+*/
+
+
+
+IF OBJECT_ID ('TEMPDB..#COBERTURA_M') IS NOT NULL
+	DROP TABLE #COBERTURA_M 
+ 
+SELECT DISTINCT
+NM_APOLICE
+,NM_TP_SINISTRO
+,NM_COBERTURA
+,NM_VLR_JUROS_CORR                                    AS NR_JUROS_CORR           --JUROS
+--,NM_CANAL                                             AS NM_CANAL_DISTRIBUICAO
+,NM_SIN_JUR                                           AS NM_JUDICIAL
+,[DT_EVENTO]                                          AS DT_OCORRENCIA                -- DT_OCORRENCIA
+,[DT_AVISO]                                                                           ---DT_AVISO
+,[NR_VLR_AVISO]                                       AS NR_VLR_BENEFICIO             --VALOR DO BENEFICIO
+,DT_CLI_BTH_DT	 
+INTO #COBERTURA_M 
+FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_BENEFICIOS]  where NM_ST_SNTR <> 'CANCELLED'
+--===================================================================
+begin
+WITH CTE_DELETE AS (
+SELECT 
+	*
+	,ROW_NUMBER() OVER(PARTITION BY nm_apolice,NM_COBERTURA ORDER BY NM_COBERTURA) RN
+FROM #COBERTURA_M )
+
+DELETE CTE_DELETE WHERE RN >1
+end
+--===================================================================
+--========= Cria tabela de coberturas X Tipo de Sinistro ============
+--===================================================================
+IF OBJECT_ID ('TEMPDB..#TYPELIST_M') IS NOT NULL
+	DROP TABLE #TYPELIST_M 
+
+SELECT 
+[NM_N_BENEFICIO]
+,[NM_APOLICE]
+,[NR_IDADE_DO_SEGURADO_DATA_DO_EVENTO]
+,[NM_SEXO]
+,[NM_TIPO_SINISTRO]
+,[DT_DATA_EVENTO]
+,[DT_DATA_REGISTRO_SINISTRO_SISTEMA_PLANILHA]
+,[DT_DATA_RETORNO_RECIBO]
+,[NR_VALOR_CAPITAL_DATA_EVENTO]
+,[NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS]
+,[NM_SINISTRO_OFICIAL_MANUAL]
+,[NM_STATUS_SINISTRO]
+,[NR_DI_CLM_ID]
+,[NM_COBERTURA_BASICA]
+,CASE 
+WHEN [NM_TIPO_SINISTRO] LIKE 'ASSIS%' THEN 'Assistência Funeral'
+WHEN [NM_TIPO_SINISTRO] LIKE 'Ante%' THEN 'Antecipação Especial por Doença Coberta'
+WHEN [NM_TIPO_SINISTRO] LIKE 'DDM%' THEN 'MODULAR DREAD DISEASE'
+WHEN [NM_TIPO_SINISTRO] LIKE 'DDP - Doenças Graves Plus - Portfólio E%' THEN 'Doenças Graves (Sobrevivência)'
+WHEN [NM_TIPO_SINISTRO] LIKE 'DDP%' THEN 'Doenças Graves'
+WHEN [NM_TIPO_SINISTRO] LIKE 'DDR%' THEN 'Doenças Graves'
+WHEN [NM_TIPO_SINISTRO] LIKE 'Invalidez Parcial (Dispensa de Premio)%' THEN 'Invalidez Acidental'
+WHEN [NM_TIPO_SINISTRO] LIKE 'Invalidez Permamente e Parcial - Dispensa de Prêmio%' THEN 'Invalidez Acidental'
+WHEN [NM_TIPO_SINISTRO] LIKE 'Invalidez Permamente e Parcial - Dispensa de Prêmio - Dotal Criança%' THEN 'MORTE DO RESP PELO PAGAMENTO'
+WHEN [NM_TIPO_SINISTRO] LIKE 'Invalidez Permanente e Total%' THEN 'Invalidez Total'
+WHEN [NM_TIPO_SINISTRO] LIKE 'Invalidez Total%' THEN 'Invalidez Total'
+WHEN [NM_TIPO_SINISTRO] LIKE 'LNB - Living Needs Benefit%' THEN 'LNB Total'
+WHEN [NM_TIPO_SINISTRO] LIKE 'Morte Acidental%' THEN 'Morte Acidental'
+WHEN [NM_TIPO_SINISTRO] LIKE 'Morte Acidental - Dotal Criança%' THEN 'MORTE ACIDENTAL DO RESP PELO PAGAMENTO'
+WHEN [NM_TIPO_SINISTRO] LIKE 'Morte Natural%' THEN 'Morte Natural'
+WHEN [NM_TIPO_SINISTRO] LIKE 'PAP%' THEN 'Perda da Autonomia Pessoal'
+WHEN [NM_TIPO_SINISTRO] LIKE 'PD%' THEN 'Invalidez Acidental'
+WHEN [NM_TIPO_SINISTRO] LIKE 'Renda Hospitalar%' THEN 'Renda Hospitalar'
+ELSE 'N' END                                               AS [NM_NOVO_TIPO_SINISTRO]
+,NM_TAX_PAID_AMT_MANUAIS
+,NM_JUDICIAL                                               as NM_JUDICIAL_M
+,[DT_AVISO]                                                as [DT_AVISO]
+,[COVID]
+INTO #TYPELIST_M 
+FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_DRV_SINISTRO_MANUAIS] as manu 
+  
+--===================================================================
+--== Identificação da apolice e cobertura por tipo de sinistro ======
+--===================================================================
+
+IF OBJECT_ID ('TEMPDB..#TCVG_M') IS NOT NULL
+	DROP TABLE #TCVG_M  
+
+SELECT 
+	   A.[NM_POL_ID]
+      ,A.[NM_PLAN_ID]
+      ,A.[NM_ORIG_PLAN_BASE_ID]
+      ,A.[NM_CVG_SEX_CD]
+      ,A.[NM_CVG_RT_AGE]
+      ,A.[NM_CVG_CSTAT_CD]
+      ,A.[NR_CVG_MPREM_AMT]
+      ,A.[DT_CVG_MAT_XPRY_DT]
+      ,A.[NR_CVG_NUM]
+      ,A.[NR_CO_ID]
+      ,A.[DT_CVG_UWGDECN_DT]
+	  ,B.NM_TP_SINISTRO
+	  ,B.NM_JUDICIAL
+	  ,B.DT_OCORRENCIA
+	  ,B.DT_AVISO
+	  --,B.NM_CANAL_DISTRIBUICAO
+	  ,B.NR_JUROS_CORR
+	  ,B.NR_VLR_BENEFICIO
+	  ,B.DT_CLI_BTH_DT
+	  	   	   	  
+	INTO #TCVG_M 
+FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_TCVG] A   
+left JOIN #COBERTURA_M  B
+ON A.NM_PLAN_ID = B.NM_COBERTURA  and a.NM_POL_ID = b.NM_APOLICE
+
+--=====================================================================================
+UPDATE A
+SET NM_TP_SINISTRO = B.NM_TP_SINISTRO
+FROM #TCVG_M AS A
+INNER JOIN (
+			SELECT * 
+			FROM (
+					SELECT NM_COBERTURA, NM_TP_SINISTRO, ROW_NUMBER() OVER(PARTITION BY NM_COBERTURA,NM_TP_SINISTRO ORDER BY NM_COBERTURA) AS RN FROM #COBERTURA_M)AS X
+			WHERE RN = 1) AS B
+			ON A.NM_PLAN_ID = B.NM_COBERTURA
+WHERE A.NM_TP_SINISTRO IS NULL
+
+--===================================================================
+--========= Localização da cobertura ================================
+--===================================================================
+IF OBJECT_ID ('TEMPDB..#TABELA_MANUAL_M') IS NOT NULL
+	DROP TABLE #TABELA_MANUAL_M 
+
+
+
+SELECT 
+	*
+	INTO #TABELA_MANUAL_M 
+FROM (
+	SELECT [NM_N_BENEFICIO]
+		  ,[NM_APOLICE]
+		  ,[NR_IDADE_DO_SEGURADO_DATA_DO_EVENTO]                          as [NR_IDADE_DO_SEGURADO_DATA_DO_EVENTO]
+		  ,[NM_SEXO]
+		  ,[NM_TIPO_SINISTRO]
+		  ,[DT_DATA_EVENTO]
+		  ,[DT_DATA_REGISTRO_SINISTRO_SISTEMA_PLANILHA]
+		  ,[DT_DATA_RETORNO_RECIBO]
+		  ,[NR_VALOR_CAPITAL_DATA_EVENTO]
+		  ,[NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS]
+		  ,[NM_SINISTRO_OFICIAL_MANUAL]
+		  ,[NM_STATUS_SINISTRO]
+		  ,A.[NR_DI_CLM_ID]
+		  ,[NM_COBERTURA_BASICA]
+		  ,[NM_NOVO_TIPO_SINISTRO]
+		  ,b.NM_TP_SINISTRO sinistro_b
+		  ,B.NM_PLAN_ID
+		  ,a.NM_JUDICIAL_M                     NM_JUDICIAL
+		  ,B.DT_OCORRENCIA
+		  ,A.DT_AVISO
+		  ,C.DT_CLI_BTH_DT --Adicionado em 25/01/23 left join com a table C para incluir a data através da apolice.
+		  --,B.NM_CANAL_DISTRIBUICAO
+		  ,B.NR_JUROS_CORR
+		  ,B.NR_VLR_BENEFICIO
+		  ,A.[COVID]
+		  ,ROW_NUMBER() OVER(PARTITION BY [NM_N_BENEFICIO], [NM_APOLICE], [NM_TIPO_SINISTRO], [DT_DATA_EVENTO], [NR_VALOR_CAPITAL_DATA_EVENTO], [NM_STATUS_SINISTRO],DT_DATA_RETORNO_RECIBO, NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS
+					   ORDER BY [NM_APOLICE]) AS RN
+		,NM_TAX_PAID_AMT_MANUAIS
+		
+	FROM #TYPELIST_M A  
+	LEFT JOIN #TCVG_M B 
+	ON A.NM_APOLICE = B.NM_POL_ID AND A.NM_NOVO_TIPO_SINISTRO = B.NM_TP_SINISTRO
+	LEFT JOIN (SELECT NM_POL_ID ,DT_CLI_BTH_DT FROM #TCVG_M  WHERE NM_TP_SINISTRO IS NOT NULL GROUP BY  NM_POL_ID ,DT_CLI_BTH_DT ) C
+	ON A.NM_APOLICE = C.NM_POL_ID 
+	where NM_STATUS_SINISTRO not in ('CANCELADO POR PRESCRIÇÃO','CANCELADO (CORREÇÃO DE DADOS)','Cancelado','PRESCRIÇÃO JUDICIAL','NEGADO')
+	and NM_SINISTRO_OFICIAL_MANUAL = 'Manual'
+	) AS X
+WHERE RN = 1
+--===========================================================================================================
+--******************* ISOLA SOMENTE MANUAIS RETIRANDO SISTEMICOS ************************************
+
+IF OBJECT_ID('TEMPDB..#TABELA_MANUAL_SEM_SISTEMICO_M') IS NOT NULL
+	DROP TABLE #TABELA_MANUAL_SEM_SISTEMICO_M 
+
+SELECT 
+	MANU.*
+	INTO #TABELA_MANUAL_SEM_SISTEMICO_M
+FROM #TABELA_MANUAL_M AS MANU
+
+
+--=============================================================================================================
+--********************* INICIA PROCEDURE DO MANUAL ********************************************************
+--=============================================================================================================
+
+--=============================================================================================================
+---------------------------- HIGIENIZA BENEFICIOS PAGOS ---------------------------------------------------
+--=============================================================================================================
+
+IF OBJECT_ID ('TEMPDB..#TEMP_SOMADO_M') IS NOT NULL
+	DROP TABLE #TEMP_SOMADO_M 
+
+
+SELECT 
+	 A.NM_APOLICE
+	,A.NM_N_BENEFICIO
+	,A.NR_DI_CLM_ID
+	,''   as NM_DISB_TYP_CD
+	,ROUND(sum(NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS),2) AS COB 
+	INTO #TEMP_SOMADO_M  
+FROM #TABELA_MANUAL_SEM_SISTEMICO_M AS A
+GROUP BY nm_APOLICE,NM_N_BENEFICIO,A.NR_DI_CLM_ID
+--==============================================================================================================
+
+IF OBJECT_ID('TEMPDB..#TEMP_PRINCIPAL_M') IS NOT NULL
+	DROP TABLE #TEMP_PRINCIPAL_M 
+
+	
+
+SELECT 
+	   A.NM_JUDICIAL                                                               as [NM_SIN_JUR]
+      ,''                                                                          AS [NM_ST_SNTR]
+      ,''                                                                          AS [NM_PROPOSTA]
+      ,A.NR_DI_CLM_ID                                                              AS [NM_SINISTRO]
+      ,A.[NM_APOLICE]					                                           
+      ,A.NM_PLAN_ID						                                           
+      ,''                                                                          AS [NM_COD_SEGURADO]
+      ,A.[NM_N_BENEFICIO]
+	  ,A.NM_SEXO
+	  ,A.NR_JUROS_CORR
+	  ,A.NR_IDADE_DO_SEGURADO_DATA_DO_EVENTO
+	  ,A.[NM_TIPO_SINISTRO]
+      ,''                                                                           AS [NM_MODULO]
+      ,''                                                                           AS [NM_RAMO]
+      --,A.NM_CANAL_DISTRIBUICAO                                                      as [NM_CANAL]
+      ,NULL                                                                         AS [DT_VIGENCIA]
+      ,NULL                                                                         AS [DT_EMISSAO]
+      ,A.DT_DATA_EVENTO                                                             AS DT_OCORRENCIA  --Data 03/02/2022 - Alteração de DT_OCORRENCIA.
+      ,A.DT_DATA_REGISTRO_SINISTRO_SISTEMA_PLANILHA                                 AS [DT_CLM_CREAT_DT]
+      ,A.DT_AVISO                                                                   AS [DT_AVISO]
+      ,''                                                                           as [NR_VLR_AVISO]
+      ,''                                                                           as [NM_PCT_BENE]
+	  ,A.NR_VLR_BENEFICIO
+	  ,A.DT_CLI_BTH_DT
+      ,CASE
+		WHEN A.NM_NOVO_TIPO_SINISTRO LIKE '%SOBREVIV%' THEN A.NR_VALOR_CAPITAL_DATA_EVENTO
+		ELSE A.NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS END                            as [NM_CS_BEN_COB]
+	  ,A.NR_VALOR_CAPITAL_DATA_EVENTO                                                AS [NM_PG_POR_BEN]
+      ,''                                                                            as [NM_VLR_RESEGURO]
+      ,''                                                                            as [NM_VLR_RESERVA]
+      ,''                                                                            as [NM_VLR_MULTA]
+      ,''                                                                            as [NM_VLR_JUROS]
+      ,''                                                                            as [NM_VLR_JUROS_CORR]
+      ,''                                                                            as [NM_IND_JUROS]
+      ,A.DT_DATA_RETORNO_RECIBO                                                      AS [DT_PAGAMENTO]
+	  ,A.DT_DATA_RETORNO_RECIBO                                                      AS [DT_RETORNO_RECIBO]
+	  ,''                                                                            as NM_DISB_TYP_CD
+	  ,NM_STATUS_SINISTRO
+	 ,NM_TAX_PAID_AMT_MANUAIS
+	 ,[COVID]
+	  INTO #TEMP_PRINCIPAL_M 
+  FROM #TABELA_MANUAL_SEM_SISTEMICO_M AS A
+
+--==============================================================================================
+IF OBJECT_ID('tempdb..#BENEFICIOS_M') is not null
+	drop table #BENEFICIOS_M
+
+
+SELECT 
+	A.* 
+	,0 AS [NM_CS_BEN_COB_ATU]
+
+into #BENEFICIOS_M 
+FROM #TEMP_PRINCIPAL_M AS A
+
+
+--==============================================================================================================================
+IF OBJECT_ID('ATUARIAL_IFRS17_GAAPTI..TB_ATUARIAL_DRV_SINISTROS_AVISADOS_PAGOS_M') IS NOT NULL
+	DROP TABLE  TB_ATUARIAL_DRV_SINISTROS_AVISADOS_PAGOS_M
+
+SELECT 
+	 [NM_APOLICE]
+	,[NM_PLAN_ID]
+	,[NM_TIPO_SINISTRO]
+	,[DT_VIGENCIA]
+	,DT_PAGAMENTO                                         AS DT_DT_PAGTO
+	,DT_RETORNO_RECIBO
+	,[NM_SINISTRO]
+	,[NM_VLR_RESEGURO]
+	,[NM_VLR_RESERVA]
+	,[NM_PG_POR_BEN]
+	,[NM_CS_BEN_COB]
+	,[NM_CS_BEN_COB_ATU]
+	, 0                                                   as NM_N_BENEFICIO
+	,CASE
+		WHEN NM_STATUS_SINISTRO = 'PAGO'                THEN 'PAGOS'
+		WHEN NM_STATUS_SINISTRO = 'PENDENTE'                   THEN 'AVISADOS'
+		
+		ELSE 'CANCELADO' END                               AS NM_TIPO
+    ,NM_SIN_JUR
+	,NM_SEXO
+	,NM_VLR_JUROS_CORR
+	--,NM_CANAL
+	,NR_JUROS_CORR
+	,NR_VLR_AVISO
+	,NR_VLR_BENEFICIO
+	,NR_IDADE_DO_SEGURADO_DATA_DO_EVENTO
+	,DT_OCORRENCIA
+	,DT_AVISO
+	,DT_CLI_BTH_DT
+	,[NM_SINISTRO]                                              AS NR_DI_CLM_ID
+	,NM_TAX_PAID_AMT_MANUAIS
+	,[COVID]
+INTO TB_ATUARIAL_DRV_SINISTROS_AVISADOS_PAGOS_M 
+FROM #BENEFICIOS_M
+--========================================================================================
+
+IF OBJECT_ID('TEMPDB..#UNIFICADO_M') IS NOT NULL
+	DROP TABLE #UNIFICADO_M 
+
+SELECT 
+	   [NM_APOLICE]
+      ,[NM_PLAN_ID]                                 as NM_COBERTURA
+	  --,NM_CANAL
+	  ,NM_SEXO
+	  ,NM_TAX_PAID_AMT_MANUAIS
+	  ,NM_SIN_JUR
+	  ,DT_CLI_BTH_DT     DT_CLI_BTH_DT
+	  ,DT_AVISO                                     AS DT_AVISO
+	  ,DT_OCORRENCIA                                AS DT_OCORRENCIA
+      ,[NM_TIPO_SINISTRO]                           as [NM_TP_SINISTRO]
+	  ,NM_N_BENEFICIO                               as NM_COD_BENEF
+	  ,NR_DI_CLM_ID
+      ,[DT_VIGENCIA]                                AS [DT_DT_VIGENCIA]
+      ,[DT_DT_PAGTO]                                AS [DT_DT_PAGTO]
+	  ,[DT_DT_PAGTO]                                AS [DT_RETORNO_RECIBO]
+      ,[NM_SINISTRO]
+      ,CONVERT(float,[NM_VLR_RESEGURO])             AS [NR_VLR_RESEGURO]
+      ,CONVERT(float,[NM_VLR_RESERVA])              AS [NR_VLR_RESERVA]
+      ,[NM_CS_BEN_COB]                              AS [NM_CS_BEN_COB_ATU]
+	  ,NR_JUROS_CORR                                AS NR_JUROS_CORR
+	  ,TRY_CONVERT(FLOAT,NR_VLR_AVISO)              AS NR_VLR_AVISO
+	  ,NR_VLR_BENEFICIO                             AS NR_VLR_BENEFICIO
+      ,[NM_TIPO]
+	  ,[NR_IDADE_DO_SEGURADO_DATA_DO_EVENTO]
+	  ,[COVID]
+  INTO #UNIFICADO_M 
+  FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTROS_AVISADOS_PAGOS_M]
+ 
+--==========================================================================================================================
+--================== INICIA PROCESSO DE PAGOS E AVISADOS ===================================================================
+
+
+IF OBJECT_ID('TEMPDB..#STEP_TDISB_M') IS NOT NULL
+	DROP TABLE #STEP_TDISB_M 
+
+
+SELECT *
+INTO #STEP_TDISB_M
+FROM (
+SELECT 
+	   b.[NM_APOLICE]                       as [NM_POL_ID]
+	  ,B.NM_COBERTURA                       AS NM_PLAN_ID
+	  --,B.NM_CANAL
+	  ,B.NM_SEXO
+	  ,B.NM_SIN_JUR
+	  ,B.DT_AVISO
+	  ,B.DT_CLI_BTH_DT
+	  ,B.DT_OCORRENCIA
+	  ,B.NR_JUROS_CORR
+	  ,ISNULL(B.NR_VLR_AVISO,NR_VLR_BENEFICIO)     AS NR_VLR_AVISO
+	  ,B.NR_VLR_BENEFICIO
+      ,B.[NM_TP_SINISTRO]                          AS NM_CLAIM_CATEGORY
+	  ,B.NM_COD_BENEF
+	  ,B.DT_DT_PAGTO                               AS DT_DISB_PAYMT_DT
+	  ,B.DT_RETORNO_RECIBO
+      ,''                                          AS [DT_DISB_EFF_DT]
+      ,''                                          AS [NR_DISB_PAID_AMT]
+      ,''                                          AS [NM_DISB_TYP_CD]
+      ,NR_DI_CLM_ID                                AS [NM_DI_CLM_ID]
+      ,''                                          AS [NR_DISB_CHQ_AMT]
+      ,''                                          AS [NR_DISB_DUE_AMT]
+	  ,B.[NR_VLR_RESEGURO]
+	  ,b.[NM_CS_BEN_COB_ATU]                       AS NR_VAL_ATU_OS_DISB
+      ,''                                          AS [NR_POL_INDEX_INT_AMT]
+      ,''                                          AS [NM_DISB_MPREM_IOF_AMT]
+      ,NM_TAX_PAID_AMT_MANUAIS                     AS [NM_DISB_TAX_PAID_AMT]
+      ,''                                          AS [NR_CVG_NUM]
+      ,''                                          AS [DT_DISB_OS_DISB_DT]
+	  , CASE 
+			WHEN B.NM_TIPO = 'AVISADOS' THEN 'PD' 
+			WHEN B.NM_TIPO = 'CANCELADO' THEN 'PD'
+			ELSE 'PG' END    AS NM_STATUS
+	  ,ROW_NUMBER() OVER(PARTITION BY b.[NM_APOLICE],B.NM_COBERTURA, NM_COD_BENEF,B.DT_DT_PAGTO ORDER BY b.[NM_APOLICE]) AS RN
+	  ,[NR_IDADE_DO_SEGURADO_DATA_DO_EVENTO]
+	  ,[COVID]
+
+
+
+  from #UNIFICADO_M as B
+  ) AS X
+  WHERE RN = 1
+--=========================================================================================================================
+
+--=========================================================================================================================
+--=========================================================================================================================
+
+ALTER TABLE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ALTER COLUMN [NM_CLAIM_CATEGORY] VARCHAR(255) NULL
+
+
+DELETE [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] WHERE NM_TIPO = 'MANUAL' ------------- Está certo??? Não deveria ser "Manual"????
+
+--===================================================================================
+IF OBJECT_ID('TEMPDB..#TRATA_HOSP') IS NOT NULL
+DROP TABLE #TRATA_HOSP
+
+SELECT 
+     A.NM_POL_ID
+	 ,A.NM_PLAN_ID
+	,B.NM_PLAN_ID   AS PLAN_BASIC_HC
+	,ROW_NUMBER()OVER(PARTITION BY A.NM_POL_ID, A.NM_PLAN_ID,B.NM_PLAN_ID ORDER BY A.NM_POL_ID) AS RN
+
+	INTO #TRATA_HOSP
+from #STEP_TDISB_M as a
+inner join [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_TCVG] as b
+	on a.NM_POL_ID = b.NM_POL_ID and b.NM_PLAN_ID like 'HC%'
+where NM_CLAIM_CATEGORY like '%hosp%'
+and a.NM_PLAN_ID is null
+
+--===================================================================================
+
+IF OBJECT_ID('TEMPDB..#TRATA_ASSIS') IS NOT NULL
+DROP TABLE #TRATA_ASSIS
+
+SELECT 
+     A.NM_POL_ID
+	 ,A.NM_PLAN_ID
+	,B.NM_PLAN_ID   AS PLAN_BASIC_ASSIS
+	,ROW_NUMBER()OVER(PARTITION BY A.NM_POL_ID, A.NM_PLAN_ID,B.NM_PLAN_ID ORDER BY A.NM_POL_ID) AS RN
+
+	INTO #TRATA_ASSIS
+from #STEP_TDISB_M as a
+inner join [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_GEPRO_ODS_TCVG] as b
+	on a.NM_POL_ID = b.NM_POL_ID and b.NM_PLAN_ID like 'AF%'
+where NM_CLAIM_CATEGORY like '%ASSIS%'
+and a.NM_PLAN_ID is null
+
+
+--==================================================================================
+
+
+
+INSERT INTO [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM](
+
+	   [NM_POL_ID]
+      ,[NM_PLAN_ID]
+      ,[NM_PLAN_BASIC]
+      ,[NM_COD_BENEF]
+      ,[NM_CLAIM_CATEGORY]
+      ,[NM_YEAR_MONTH_ISSUE]
+	  ,[NM_POL_ISS_EFF_DT_ORIG] 
+      ,[DT_DISB_PAYMT_DT]
+	  ,[DT_RETORNO_RECIBO]
+      ,[NR_VAL_ATU_OS_DISB]
+      ,[NR_VLR_RESEGURO]
+      ,[NM_DISB_TYP_CD]
+      ,[NM_CVG_CSTAT_CD]
+      ,[NM_DI_CLM_ID]
+      ,[NR_DISB_CHQ_AMT]
+      ,[NM_DISB_TAX_PAID_AMT]
+      ,[NM_PTNR_CO_ID]
+      ,[NM_ETBL_DESC_TXT]
+      ,[NM_INFLATION_INDEX]
+      ,[NM_STATUS]
+      ,[NM_TIPO]
+	  ,DT_CLI_BTH_DT  -- nova adicao
+	  ,NM_SEXO
+	  ,NM_JUDICIAL
+	  --,NM_CANAL_DISTRIBUICAO
+	  ,NR_JUROS_CORR
+	  ,NR_VLR_AVISO
+	  ,DT_AVISO
+	  ,DT_OCORRENCIA
+	  ,DT_IDADE_SINISTRO
+	  ,DT_ANOS_ATE_SINISTRO
+	  ,CLM_TOT_AMT --COLUNA NOVA
+	  ,PREM_DED_AMT --COLUNA NOVA
+	  ,DED_FLASH_AMT --COLUNA NOVA
+	  ,CLM_PD_AMT --COLUNA NOVA
+	  ,LOAN_DED_AMT --COLUNA NOVA
+	  ,APL_DED_AMT --COLUNA NOVA
+	  ,DIV_AMT --COLUNA NOVA
+	  ,INT_DIV_AMT --COLUNA NOVA
+	  ,[COVID]
+
+
+
+
+)
+SELECT 
+	   TDISB.[NM_POL_ID]                                                                                         AS NM_POL_ID
+	  ,case 
+		when tdisb.NM_CLAIM_CATEGORY = 'sobrevivência' and  TDISB.NM_PLAN_ID is null then TPOL.NM_PLAN_ID
+		when tdisb.NM_CLAIM_CATEGORY = 'sobrevivência' and  TDISB.NM_PLAN_ID ='' then TPOL.NM_PLAN_ID
+		when tdisb.NM_CLAIM_CATEGORY like '%hospi%' and  TDISB.NM_PLAN_ID is null then HOSP.PLAN_BASIC_HC
+		when tdisb.NM_CLAIM_CATEGORY like '%ASSIS%' and  TDISB.NM_PLAN_ID is null then ASSIS.PLAN_BASIC_ASSIS
+		else TDISB.NM_PLAN_ID end                                                                                NM_PLAN_ID 
+	  ,TPOL.NM_PLAN_ID                                                                                           AS NM_PLAN_BASIC
+	  ,NM_COD_BENEF
+      ,TDISB.NM_CLAIM_CATEGORY     
+	  ,TPOL.NM_POL_ISS_EFF_DT
+	  ,TPOL.NM_POL_ISS_EFF_DT                                                                                    AS NM_POL_ISS_EFF_DT_ORIG 
+      ,TDISB.[DT_DISB_PAYMT_DT]
+      ,TDISB.[DT_RETORNO_RECIBO]
+	  ,TDISB.NR_VAL_ATU_OS_DISB                                                                                  AS NR_VAL_ATU_OS_DISB
+	  ,[NR_VLR_RESEGURO]
+	  ,TDISB.[NM_DISB_TYP_CD]
+	  ,TCVG.NM_CVG_CSTAT_CD
+      ,TDISB.[NM_DI_CLM_ID]
+      ,TDISB.[NR_DISB_CHQ_AMT]
+	  ,	case 
+		when isnumeric(TDISB.[NM_DISB_TAX_PAID_AMT]) = 0 then 0
+		else convert(float,TDISB.[NM_DISB_TAX_PAID_AMT]) end                                                     as NM_DISB_TAX_PAID_AMT
+	  ,TPOLD.NM_PTNR_CO_ID
+	  ,''                                                                                                         as [NM_ETBL_DESC_TXT]
+	  ,TPH.NM_INFLATION_INDEX
+	  ,TDISB.NM_STATUS
+	  ,'MANUAL'                                                                                                   AS NM_TIPO
+	  ,DT_CLI_BTH_DT    --nova adicao
+	  ,NM_SEXO
+	  ,NM_SIN_JUR
+	  --,NM_CANAL
+	  ,NR_JUROS_CORR
+	  ,NR_VLR_BENEFICIO
+	  ,DT_AVISO
+	  ,DT_OCORRENCIA
+	  ,[NR_IDADE_DO_SEGURADO_DATA_DO_EVENTO]                                                                     AS DT_IDADE_SINISTRO
+	  ,DATEDIFF(YEAR,TPOL.NM_POL_ISS_EFF_DT,DT_OCORRENCIA)                                                       AS DT_ANOS_ATE_SINISTRO
+	  ,NULL  --,TCPMT.CLM_TOT_AMT --COLUNA NOVA  -- epi016  nos registros manuais esses valores nao existem , estes movimentos nao sao carregados nesta tabela TCPMT
+	  ,NULL  --,TCPMT.PREM_DED_AMT --COLUNA NOVA -- epi016  nos registros manuais esses valores nao existem , estes movimentos nao sao carregados nesta tabela TCPMT
+	  ,NULL  --,TCPMT.DED_FLASH_AMT --COLUNA NOVA -- epi016  nos registros manuais esses valores nao existem , estes movimentos nao sao carregados nesta tabela TCPMT
+	  ,NULL  --,TCPMT.CLM_PD_AMT --COLUNA NOVA -- epi016  nos registros manuais esses valores nao existem , estes movimentos nao sao carregados nesta tabela TCPMT
+	  ,NULL  --,TCPMT.LOAN_DED_AMT --COLUNA NOVA -- epi016  nos registros manuais esses valores nao existem , estes movimentos nao sao carregados nesta tabela TCPMT
+	  ,NULL  --,TCPMT.APL_DED_AMT --COLUNA NOVA -- epi016  nos registros manuais esses valores nao existem , estes movimentos nao sao carregados nesta tabela TCPMT
+	  ,NULL  --,TCPMT.DIV_AMT --COLUNA NOVA -- epi016  nos registros manuais esses valores nao existem , estes movimentos nao sao carregados nesta tabela TCPMT
+	  ,NULL  --,TCPMT.INT_DIV_AMT --COLUNA NOVA -- epi016  nos registros manuais esses valores nao existem , estes movimentos nao sao carregados nesta tabela TCPMT
+	  ,[COVID]
+
+
+
+	 
+FROM #STEP_TDISB_M  AS TDISB                          
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].TB_GEPRO_ODS_TPOL AS TPOL
+	ON TDISB.[NM_POL_ID] = TPOL.NM_POL_ID
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TPOLD] AS TPOLD
+	ON TDISB.[NM_POL_ID] = TPOLD.NM_POL_ID
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TCVG] AS TCVG
+	ON TDISB.[NM_POL_ID] = TCVG.NM_POL_ID AND TDISB.NM_PLAN_ID = TCVG.NM_PLAN_ID
+	
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TPH] AS TPH
+	ON TCVG.NM_PLAN_ID = TPH.NM_PLAN_ID
+
+LEFT JOIN #TRATA_HOSP AS HOSP
+	ON TDISB.NM_POL_ID = HOSP.NM_POL_ID  AND HOSP.RN = 1
+
+LEFT JOIN #TRATA_ASSIS AS ASSIS
+	ON TDISB.NM_POL_ID = ASSIS.NM_POL_ID  AND ASSIS.RN = 1
+--LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TCPMT] AS TCPMT            -- epi016  nos registros manuais  estes movimentos nao sao carregados nesta tabela TCPMT
+--	ON TCVG.[NM_POL_ID] = TCPMT.[POL_ID] AND TDISB.NM_DI_CLM_ID = TCPMT.DI_CLM_ID   -- epi016  nos registros manuais  estes movimentos nao sao carregados nesta tabela TCPMT
+
+	
+
+--===============================================================================================================================
+--BEGIN
+--  ALTER TABLE [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD NR_QTD_DIARIAS_RENDA_HOSPITALAR INT
+--  ALTER TABLE [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD NR_QTD_DIARIAS_UTI INT
+--  ALTER TABLE [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD NR_VALOR_DA_DIARIA FLOAT
+--END
+
+
+--================================================================================================================================
+-- CREATE INDEX
+--=======================================================================================================
+--=================== HIGIENIZAÇÃO DE TABELA FINAL ======================================================
+DECLARE @DATA_INICIO_M DATE 
+DECLARE @DATA_FIM_M  DATE 
+
+DECLARE @DATA_INICIO_CARNE_M DATE 
+DECLARE @DATA_FIM_CARNE_M  DATE 
+
+DECLARE @ANO_M AS VARCHAR(4)
+DECLARE @MES_M AS VARCHAR(2)
+DECLARE @ANOMES_M AS VARCHAR(6)
+
+
+SELECT @DATA_INICIO_M =  (SELECT DT_DATA_INI FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_XLSX_ODS_DATE_CHANGE])-- AS [PRIMEIRO DIA DO MÊS ANTERIOR]
+SELECT @DATA_FIM_M = EOMONTH(@DATA_INICIO_M) 
+
+
+SELECT @DATA_INICIO_CARNE_M =  (SELECT DATEADD(MM, DATEDIFF(MM,0,@DATA_INICIO_M) - 1, 0))-- AS [PRIMEIRO DIA DO MÊS ANTERIOR]
+SELECT @DATA_FIM_CARNE_M = EOMONTH(@DATA_INICIO_M) 
+
+SET @ANO_M = CONVERT(VARCHAR,YEAR(@DATA_INICIO_M))
+SET @MES_M = CONVERT(VARCHAR,MONTH(@DATA_INICIO_M))
+SET @ANOMES_M =  CONCAT(@ANO_M,CONCAT('0',RIGHT(@MES_M,2) ))
+
+--=======================================================================================================
+DELETE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] 
+WHERE [DT_RETORNO_RECIBO] < @DATA_INICIO_M
+AND [DT_RETORNO_RECIBO] IS NOT NULL
+
+--=======================================================================================================
+--************************************* TRATAMENTO DE DATA DO DD **************************************
+--=======================================================================================================
+
+BEGIN
+WITH CTE AS (
+	SELECT
+		    NM_PLAN_ID
+		   ,NM_POL_ID
+		   ,CASE
+				WHEN LEFT(NM_PLAN_ID,2) = 'DD' AND CONVERT(DATE,[NM_YEAR_MONTH_ISSUE]) <= '2014-10-01' AND DATEADD(MM,121,CONVERT(DATE,[NM_YEAR_MONTH_ISSUE])) <= @DATA_FIM_M   THEN  DATEADD(MM,121,CONVERT(DATE,[NM_YEAR_MONTH_ISSUE]))
+				--WHEN LEFT(NM_PLAN_ID,2) = 'DD' AND DATEADD(MM,121,CONVERT(DATE,[NM_POL_ISS_EFF_DT])) > @DATA_FIM  THEN CONVERT(DATE,[NM_POL_ISS_EFF_DT]) 
+
+				ELSE CONVERT(DATE,[NM_YEAR_MONTH_ISSUE]) END AS [NM_POL_ISS_EFF_DT]
+
+      
+	FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+
+)
+
+--======================================================================================================
+UPDATE A
+SET A.[NM_YEAR_MONTH_ISSUE] = B.NM_POL_ISS_EFF_DT 
+FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+INNER JOIN CTE AS B
+	ON A.NM_PLAN_ID = B.NM_PLAN_ID AND A.NM_POL_ID = B.NM_POL_ID
+WHERE LEFT(A.NM_PLAN_ID,2) = 'DD'
+
+END
+
+--======================================================================================================
+--******************* UPDATE DE CORREÇÃO DE STATUS ****************************************************
+
+  UPDATE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+  SET NM_STATUS = 'PD'
+  WHERE [DT_RETORNO_RECIBO] > @DATA_FIM_M
+
+  --SE O POL_ID FOR DE DATA MAIOR QUE DATA DO RELATORIO ELE É PENDENTE PARA AQUELE MES
+
+--======================================================================================================
+UPDATE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+  SET DT_DISB_PAYMT_DT = NULL
+  WHERE DT_DISB_PAYMT_DT ='1900-01-01'
+
+
+--ONDE TEM SUJEIRA DE DATA TRANSFORMA EM NULL 
+ 
+--======================================================================================================= 
+ 
+ UPDATE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+  SET NM_STATUS = 'PD'
+  WHERE DT_DISB_PAYMT_DT IS NULL
+
+-- SE NAO TEM DATA DE PAGAMENTO ELE É PENDENTE
+--=====================================================================================================
+
+  --ALTER TABLE [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD NR_QTD_DIARIAS_RENDA_HOSPITALAR INT
+  --ALTER TABLE [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD NR_QTD_DIARIAS_UTI INT
+  --ALTER TABLE [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD NR_VALOR_DA_DIARIA FLOAT
+
+
+BEGIN  
+  UPDATE A
+  SET A.NR_QTD_DIARIAS_RENDA_HOSPITALAR = B.NR_QTD_DIARIAS_RENDA_HOSPITALAR
+  FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+  INNER JOIN (SELECT NR_QTD_DIARIAS_RENDA_HOSPITALAR,NM_APOLICE,NR_DI_CLM_ID   FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_XLSX_DRV_SINISTRO_MANUAIS]) AS B
+	ON A.NM_POL_ID = B.NM_APOLICE AND A.NM_DI_CLM_ID = B.NR_DI_CLM_ID
+
+UPDATE A
+  SET A.NR_QTD_DIARIAS_UTI = B.NR_QTD_DIARIAS_UTI
+  FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+  INNER JOIN (SELECT NR_QTD_DIARIAS_UTI,NM_APOLICE,NR_DI_CLM_ID   FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_XLSX_DRV_SINISTRO_MANUAIS]) AS B
+	ON A.NM_POL_ID = B.NM_APOLICE AND A.NM_DI_CLM_ID = B.NR_DI_CLM_ID
+
+UPDATE A
+SET A.NR_VALOR_DA_DIARIA = B.NR_VALOR_DA_DIARIA
+FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+INNER JOIN (SELECT NR_VALOR_DA_DIARIA,NM_APOLICE,NR_DI_CLM_ID   FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_XLSX_DRV_SINISTRO_MANUAIS]) AS B
+	ON A.NM_POL_ID = B.NM_APOLICE AND A.NM_DI_CLM_ID = B.NR_DI_CLM_ID
+
+END
+
+
+  UPDATE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+  SET NM_PLAN_ID = NM_PLAN_BASIC
+  WHERE NM_PLAN_ID IS NULL
+  --=============================================================================================
+  
+  UPDATE A
+  SET A.NM_INFLATION_INDEX = B.NM_INFLATION_INDEX
+  FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+  INNER JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_GEPRO_ODS_TPH] AS B
+	ON A.NM_PLAN_ID = B.NM_PLAN_ID
+
+--=================================================================================================
+
+--******************   DELETA PENDENTES ***********************************************************
+DELETE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] WHERE NM_STATUS = 'PD'
+
+--=====================================================================================================================================================================
+--********************************************** Acrescenta as colunas ERA E COHORT na origem *************************************************************************
+--=====================================================================================================================================================================
+
+ALTER TABLE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+ADD NM_GAAP_TI_NEW_COHORT VARCHAR(255), NM_GAAP_ERA VARCHAR(255)
+
+--=====================================================================================================================================================================
+--********************************************** Insere os dados de ERA E COHORT na origem ****************************************************************************
+--=====================================================================================================================================================================
+
+
+IF OBJECT_ID('tempdb..#TEMP_ERA_COHORT') IS NOT NULL
+	DROP TABLE #TEMP_ERA_COHORT 
+
+
+Select * 
+
+INTO #TEMP_ERA_COHORT
+from (
+	SELECT
+	     A.[NM_POL_ID]
+        ,A.[NM_PLAN_ID]
+        ,A.[NM_PLAN_BASIC]
+        ,A.[NM_SEXO]
+        ,A.[NM_COD_BENEF]
+        ,A.[NM_JUDICIAL]
+        --,A.[NM_CANAL_DISTRIBUICAO]
+        ,E.claim_category as NM_CLAIM_CATEGORY
+		,E.tipo_sinistro  as TIPO_SINISTRO  -- epi016 19DEZ incluido para Audrey 
+        ,A.[NM_YEAR_MONTH_ISSUE] as NM_POL_ISS_EFF_DT
+		,A.[NM_YEAR_MONTH_ISSUE]    --incluido rxm 20221214
+	    ,A.[NM_POL_ISS_EFF_DT_ORIG] 
+        ,A.[DT_OCORRENCIA]
+        ,A.[DT_AVISO]
+        ,A.[DT_IDADE_SINISTRO]
+        ,A.[DT_ANOS_ATE_SINISTRO]
+        ,A.[DT_DISB_PAYMT_DT]
+		,A.[DT_RETORNO_RECIBO]
+        ,A.[NR_VAL_ATU_OS_DISB]
+        ,A.[NR_VLR_RESEGURO]
+        ,A.[NR_JUROS_CORR]
+        ,A.[NR_VLR_AVISO]
+        ,A.[NR_LOAN]
+        ,A.[NM_DISB_TYP_CD]
+        ,A.[NM_CVG_CSTAT_CD]
+        ,A.[NM_DI_CLM_ID]
+        ,A.[NR_DISB_CHQ_AMT]
+        ,A.[NM_DISB_TAX_PAID_AMT]
+        ,A.[NM_PTNR_CO_ID]
+        ,A.[NM_ETBL_DESC_TXT]
+        ,A.[NM_INFLATION_INDEX]
+        ,A.[NM_STATUS]
+        ,A.[NM_TIPO]
+		,A.[DT_CLI_BTH_DT]  -- nova adicao
+        ,A.[NR_QTD_DIARIAS_RENDA_HOSPITALAR]
+        ,A.[NR_QTD_DIARIAS_UTI]
+        ,A.[NR_VALOR_DA_DIARIA]
+		,B.NM_GAAP_TI_NEW_COHORT
+		,C.NM_GAAP_Era              AS NM_GAAP_ERA
+		,A.[COVID]
+		,ROW_NUMBER()OVER(PARTITION BY [NM_POL_ID],A.[NM_PLAN_ID],[NM_PLAN_BASIC], A.NM_COD_BENEF, A.NM_DI_CLM_ID ,A.DT_RETORNO_RECIBO 
+		ORDER BY ISNULL(DT_RETORNO_RECIBO,GETDATE()) ) RN
+
+	FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+	LEFT JOIN [ATUARIAL_IFRS17_GAAPTI]..[TB_XLSX_ODS_COHORTGROUPXPLANID] AS B
+		ON (SELECT CASE
+			WHEN A.NM_PLAN_ID LIKE '%ETI%' THEN NM_PLAN_BASIC
+			WHEN A.NM_PLAN_ID LIKE '%RPU%' THEN NM_PLAN_BASIC
+			ELSE A.NM_PLAN_ID
+			END  AS NM_PLAN_ID)  = ltrim(rtrim(CONVERT(VARCHAR(50),B.NM_PLAN_ID))) 
+
+	LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_XLSX_ODS_ERA] AS C
+		ON A.[NM_YEAR_MONTH_ISSUE] BETWEEN C.DT_START_DATE AND C.DT_END_DATE
+
+	LEFT JOIN dbo.CLAIMCATEGORY E on a.NM_CLAIM_CATEGORY = E.tipo_sinistro
+
+	where A.NM_PLAN_ID = B.NM_PLAN_ID) a
+where RN = 1
+
+
+
+--=====================================================================================================================================================================
+--********************************************** Recria a tabela de dados de Origem ***********************************************************************************
+--=====================================================================================================================================================================
+
+IF OBJECT_ID('[ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]') IS NOT NULL
+	DROP TABLE [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+
+SELECT
+	*
+	INTO [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+FROM #TEMP_ERA_COHORT
+
+---------------------------------------------------------------------------------------
+--Cria coluna do DIVIDENDO na [TB_ATUARIAL_DRV_SINISTRO_ORIGEM]
+---------------------------------------------------------------------------------------
+ALTER TABLE [dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] ADD DIVIDENDO DECIMAL(14,2)
+
+---------------------------------------------------------------------------------------------------------------
+-- Faz o update da tabela [TB_ATUARIAL_DRV_SINISTRO_ORIGEM] para atualizar DIVIDENDO de sinistros SISTEMICO
+---------------------------------------------------------------------------------------------------------------
+IF OBJECT_ID('TEMPDB..#DIVIDENDO') IS NOT NULL
+	DROP TABLE #DIVIDENDO
+
+select TCPMT.POL_ID, TCPMT.DI_CLM_ID , TCPMT.CLI_ID,  TCPMT.DIV_AMT AS DIVIDENDO
+	INTO #DIVIDENDO
+	from  TB_GEPRO_ODS_TCPMT as TCPMT
+			 where TCPMT.CLM_PMT_TYP  = 'CP' and TCPMT.CLM_PMT_CSTAT_CD = 'A'								            
+					and LEFT(REPLACE(TCPMT.CLM_PMT_DT, '-', ''),6) = LEFT(REPLACE(@DATA_INICIO, '-', ''),6)  
+					and TCPMT.DIV_AMT  <> 0   
+
+-- ATUALIZA  DIVIDENDO COM VALOR CORRETO DA TCPMT POR APOLICE, NUMERO DE SINISTRO E BENEFICIARIO 
+UPDATE A
+SET A.DIVIDENDO = ISNULL(B.DIVIDENDO,0)  
+FROM [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+LEFT JOIN #DIVIDENDO AS B
+	ON A.NM_POL_ID = B.POL_ID AND A.NM_DI_CLM_ID = B.DI_CLM_ID AND A.NM_COD_BENEF = B.CLI_ID
+WHERE B.DIVIDENDO <> 0  
+	 AND A.NM_TIPO = 'SISTEMICO'
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------
+-- Faz o merge da tabela [TB_ATUARIAL_DRV_SINISTRO_ORIGEM] com [TB_XLSX_ODS_REGISTROS_MANUAIS] para atualizar COVID de sinistros MANUAL
+----------------------------------------------------------------------------------------------------------------------------------------------
+
+MERGE into [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+USING (
+    SELECT
+     [NR_BENEFICIO]
+    ,right(replicate('0',9) + [NM_APOLICE],9)                               as [NM_APOLICE]
+    ,[NM_TIPO_SINISTRO]
+    ,NM_COBERTURA
+    ,[DT_DATA_EVENTO_MATURACAO] as [DT_DATA_EVENTO]
+   -- ,[DT_DATA_RETORNO_RECIBO] -- É A DATA DO PAGAMENTO
+	,NM_STATUS_SINISTRO
+    ,right(replicate('0',6) + NR_BENEFICIO,6)                                 as NR_DI_CLM_ID
+    ,case when UPPER(NM_CAUSA_EVENTO) like '%COVID%' then 'S' else 'N' end as [COVID]
+FROM  [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_ODS_REGISTROS_MANUAIS] 
+	GROUP BY 
+		 [NR_BENEFICIO]
+		,right(replicate('0',9) + [NM_APOLICE],9)                             
+		,[NM_TIPO_SINISTRO]
+		,NM_COBERTURA
+		,[DT_DATA_EVENTO_MATURACAO] 
+		--,[DT_DATA_RETORNO_RECIBO] -- É A DATA DO PAGAMENTO
+		,NM_STATUS_SINISTRO
+		,right(replicate('0',6) + NR_BENEFICIO,6)                                 
+		,case when UPPER(NM_CAUSA_EVENTO) like '%COVID%' then 'S' else 'N' end 
+) AS B
+    ON (
+	A.NM_DI_CLM_ID =B.NR_DI_CLM_ID
+	AND A.NM_POL_ID =B.[NM_APOLICE]   
+	--AND A.[DT_RETORNO_RECIBO]=B.[DT_DATA_RETORNO_RECIBO]
+	AND A.NM_PLAN_ID=B.NM_COBERTURA   
+	AND A.NM_COD_BENEF=0   
+	AND A.NM_TIPO = 'MANUAL'
+	AND B.NM_STATUS_SINISTRO not in ('CANCELADO POR PRESCRIÇÃO','CANCELADO (CORREÇÃO DE DADOS)','Cancelado','PRESCRIÇÃO JUDICIAL','NEGADO')
+    )
+WHEN MATCHED THEN
+                 UPDATE SET       
+                           A.COVID=B.COVID ;
+
+----------------------------------------------------------------------------------------------------------------------------------------------
+-- Faz o merge da tabela [TB_ATUARIAL_DRV_SINISTRO_ORIGEM] com [TB_XLSX_ODS_REGISTROS_MANUAIS] para atualizar COVID de sinistros SISTEMICO
+----------------------------------------------------------------------------------------------------------------------------------------------
+
+MERGE into [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+USING (
+    SELECT
+     [NR_BENEFICIO]
+    ,right(replicate('0',9) + [NM_APOLICE],9)                               as [NM_APOLICE]
+    ,[NM_TIPO_SINISTRO]
+    ,NM_COBERTURA
+--	,NM_CODIGO_BENEFICIARIO_HERDEIRO_LEGAL_SOLICITANTE_AF
+--    ,[DT_DATA_RETORNO_RECIBO] -- É A DATA DO PAGAMENTO
+	,NM_STATUS_SINISTRO
+    ,right(replicate('0',6) + NR_BENEFICIO,6)                                 as NR_DI_CLM_ID
+    ,case when UPPER(NM_CAUSA_EVENTO) like '%COVID%' then 'S' else 'N' end as [COVID]
+FROM  [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_ODS_REGISTROS_MANUAIS] 
+	GROUP BY 
+		 [NR_BENEFICIO]
+		,right(replicate('0',9) + [NM_APOLICE],9)                             
+		,[NM_TIPO_SINISTRO]
+		,NM_COBERTURA
+--		,NM_CODIGO_BENEFICIARIO_HERDEIRO_LEGAL_SOLICITANTE_AF
+--		,[DT_DATA_RETORNO_RECIBO] -- É A DATA DO PAGAMENTO
+		,NM_STATUS_SINISTRO
+		,right(replicate('0',6) + NR_BENEFICIO,6)                                 
+		,case when UPPER(NM_CAUSA_EVENTO) like '%COVID%' then 'S' else 'N' end 
+) AS B
+    ON (
+	A.NM_DI_CLM_ID =B.NR_DI_CLM_ID
+	AND A.NM_POL_ID =B.[NM_APOLICE]   
+--	AND A.[DT_RETORNO_RECIBO]=B.[DT_DATA_RETORNO_RECIBO]
+	AND A.NM_PLAN_ID=B.NM_COBERTURA   
+--	AND A.NM_COD_BENEF=B.NM_CODIGO_BENEFICIARIO_HERDEIRO_LEGAL_SOLICITANTE_AF   
+	AND A.NM_TIPO = 'SISTEMICO'
+    )
+WHEN MATCHED THEN
+                 UPDATE SET       
+                           A.COVID=B.COVID ;
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------
+-- Faz o merge da tabela [TB_ATUARIAL_DRV_SINISTRO_ORIGEM] com [TB_XLSX_ODS_REGISTROS_MANUAIS] para atualizar DIVIDENDOS de sinistros MANUAIS
+----------------------------------------------------------------------------------------------------------------------------------------------
+
+MERGE into [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_ATUARIAL_DRV_SINISTRO_ORIGEM] AS A
+USING (
+    SELECT
+     [NR_BENEFICIO]
+    ,right(replicate('0',9) + [NM_APOLICE],9)                               as [NM_APOLICE]
+    ,[NM_TIPO_SINISTRO]
+    ,NM_COBERTURA
+    ,[DT_DATA_EVENTO_MATURACAO] as [DT_DATA_EVENTO]
+   -- ,[DT_DATA_RETORNO_RECIBO] --  É A DATA DO PAGAMENTO
+	,NM_STATUS_SINISTRO
+    ,right(replicate('0',6) + NR_BENEFICIO,6)                                 as NR_DI_CLM_ID
+	,case when 
+		TRY_CONVERT(float, [NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS_SEGURADO]) = 0 then 0
+		else 
+		(TRY_CONVERT(float, [NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS_SEGURADO]) - TRY_CONVERT(float, [NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_SEM_DIVIDENDOS_SEGURADO]) )
+		end as [DIVIDENDO]
+
+FROM  [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_ODS_REGISTROS_MANUAIS] 
+	GROUP BY 
+		 [NR_BENEFICIO]
+		,right(replicate('0',9) + [NM_APOLICE],9)                             
+		,[NM_TIPO_SINISTRO]
+		,NM_COBERTURA
+		,[DT_DATA_EVENTO_MATURACAO] 
+	--	,[DT_DATA_RETORNO_RECIBO] --  É A DATA DO PAGAMENTO
+		,NM_STATUS_SINISTRO
+		,right(replicate('0',6) + NR_BENEFICIO,6)                                 
+		,case when 
+		TRY_CONVERT(float, [NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS_SEGURADO]) = 0 then 0
+		else 
+		(TRY_CONVERT(float, [NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS_SEGURADO]) - TRY_CONVERT(float, [NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_SEM_DIVIDENDOS_SEGURADO]) )
+		end 
+		
+) AS B
+    ON (
+	A.NM_DI_CLM_ID =B.NR_DI_CLM_ID
+	AND A.NM_POL_ID =B.[NM_APOLICE]   
+	--AND A.[DT_RETORNO_RECIBO]=B.[DT_DATA_RETORNO_RECIBO]  
+	AND A.NM_PLAN_ID=B.NM_COBERTURA   
+	AND A.NM_COD_BENEF=0   
+	AND A.NM_TIPO = 'MANUAL'
+	AND B.NM_STATUS_SINISTRO not in ('CANCELADO POR PRESCRIÇÃO','CANCELADO (CORREÇÃO DE DADOS)','Cancelado','PRESCRIÇÃO JUDICIAL','NEGADO')
+    )
+WHEN MATCHED THEN
+                 UPDATE SET       
+                           A.DIVIDENDO=B.DIVIDENDO;
+
+----------------------------------------------------------------------------------------------------------------------------------------------
+
+
+/*
+*******************************************************************************************************
+*******************************************************************************************************
+                             INICIA DESTINO
+*******************************************************************************************************
+*******************************************************************************************************
+*/
+
+
+IF OBJECT_ID('[ATUARIAL_IFRS17_GAAPTI]..TB_ATUARIAL_DRV_SINISTRO_DESTINO') IS NOT NULL
+	DROP TABLE [ATUARIAL_IFRS17_GAAPTI]..TB_ATUARIAL_DRV_SINISTRO_DESTINO 
+
+SELECT 
+	CASE	
+		WHEN ORI.NM_STATUS = 'PD' THEN 'CLAIM DUE'  ELSE 'CLAIM PAID' END AS [TYPE]
+	,NM_CLAIM_CATEGORY      
+	,COH.NM_GAAP_TI_NEW_COHORT
+	,PLANPOB.NM_FAS_
+	,ORI.NM_INFLATION_INDEX
+	,ERA.NM_GAAP_ERA
+	,CONCAT(YEAR(@DATA_INICIO),SUBSTRING(CONVERT(VARCHAR,@DATA_INICIO),6,2)) AS NM_YEAR_MONTH
+	,SUM(CONVERT(FLOAT,NR_VAL_ATU_OS_DISB) /* + convert(float,NM_DISB_TAX_PAID_AMT) */ + ISNULL(NR_LOAN,0)) AS AMOUNT -- epi016 29DEZ removi NM_DISB_TAX_PAID_AMT
+	,'' as NM_YEAR_MONTH_ISSUE
+	
+	
+INTO [ATUARIAL_IFRS17_GAAPTI]..TB_ATUARIAL_DRV_SINISTRO_DESTINO
+FROM [ATUARIAL_IFRS17_GAAPTI]..TB_ATUARIAL_DRV_SINISTRO_ORIGEM AS ORI
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI]..TB_XLSX_ODS_COHORTGROUPXPLANID AS COH
+	ON (SELECT CASE
+		WHEN ORI.NM_PLAN_ID LIKE '%ETI%' THEN NM_PLAN_BASIC
+		WHEN ORI.NM_PLAN_ID LIKE '%RPU%' THEN NM_PLAN_BASIC
+		ELSE ORI.NM_PLAN_ID
+		END  AS NM_PLAN_ID)  = LTRIM(RTRIM(CONVERT(VARCHAR(50),COH.NM_PLAN_ID))) 
+	
+
+LEFT JOIN (
+	
+SELECT 
+	 NM_PLAN_ID
+	,NM_FAS_
+FROM(
+	SELECT
+		NM_PLAN_ID
+		,NM_FAS_
+		,ROW_NUMBER() OVER(PARTITION BY NM_PLAN_ID ORDER BY NM_PLAN_ID) RN	
+	FROM TB_XLSX_ODS_COD_PLAN_POB
+
+) AS X WHERE RN = 1
+) AS PLANPOB
+	ON (SELECT CASE
+		WHEN ORI.NM_PLAN_ID LIKE '%ETI%' THEN NM_PLAN_BASIC
+		WHEN ORI.NM_PLAN_ID LIKE '%RPU%' THEN NM_PLAN_BASIC
+		ELSE ORI.NM_PLAN_ID
+		END  AS NM_PLAN_ID
+		) = PLANPOB.NM_PLAN_ID
+
+
+LEFT JOIN [ATUARIAL_IFRS17_GAAPTI].[DBO].[TB_XLSX_ODS_ERA] AS ERA
+	ON ORI.NM_POL_ISS_EFF_DT BETWEEN ERA.DT_START_DATE AND ERA.DT_END_DATE
+GROUP BY 
+	CASE	
+		WHEN ORI.NM_STATUS = 'PD' THEN 'CLAIM DUE'  ELSE 'CLAIM PAID' END
+	,COH.NM_GAAP_TI_NEW_COHORT
+	,PLANPOB.NM_FAS_
+	,ORI.NM_INFLATION_INDEX
+	,ERA.NM_GAAP_ERA
+	,NM_CLAIM_CATEGORY
+	,NM_YEAR_MONTH_ISSUE
+	
+--========================================================================================================

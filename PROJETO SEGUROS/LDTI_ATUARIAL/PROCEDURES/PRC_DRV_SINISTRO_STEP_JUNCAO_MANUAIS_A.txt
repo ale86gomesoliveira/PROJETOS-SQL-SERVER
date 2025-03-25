@@ -1,0 +1,177 @@
+
+
+CREATE   PROC [dbo].[PRC_DRV_SINISTRO_STEP_JUNCAO_MANUAIS_A]
+AS
+
+--------------------------------------------------------------------------------------------------------------------------
+-- Antes de fazer a junção dos sinistros manuais é feito um teste para verificar se cada um dos 6 sinistros manuais 
+-- está com o counteúdo DESLIGA e se estiver limpa a respectiva tabela ODS 
+-- Obs: o respectivo DTS de carga limpa também as respectivas tabelas ODS caso esteja DESLIGA, feito aqui com redundância 
+--------------------------------------------------------------------------------------------------------------------------
+
+IF (SELECT UPPER(LTRIM(RTRIM(NM_GERAL))) FROM TB_XLSX_ODS_LIGA_DESLIGA_SINISTRO) = 'DESLIGA' 
+	TRUNCATE TABLE [dbo].[TB_XLSX_ODS_GERAL] 
+
+IF (SELECT UPPER(LTRIM(RTRIM(NM_ASSISTENCIA_FUNERAL))) FROM TB_XLSX_ODS_LIGA_DESLIGA_SINISTRO) = 'DESLIGA' 
+	TRUNCATE TABLE [dbo].[TB_XLSX_ODS_ASSISTENCIA_FUNERAL] 
+
+IF (SELECT UPPER(LTRIM(RTRIM(NM_JUDICIAL))) FROM TB_XLSX_ODS_LIGA_DESLIGA_SINISTRO) = 'DESLIGA' 
+	TRUNCATE TABLE [dbo].[TB_XLSX_ODS_JUDICIAL] 
+
+IF (SELECT UPPER(LTRIM(RTRIM(NM_SOBREVIVENCIA))) FROM TB_XLSX_ODS_LIGA_DESLIGA_SINISTRO) = 'DESLIGA' 
+	TRUNCATE TABLE [dbo].[TB_XLSX_ODS_SOBREVIVENCIA] 
+
+IF (SELECT UPPER(LTRIM(RTRIM(NM_RENDA_HOSPITALAR))) FROM TB_XLSX_ODS_LIGA_DESLIGA_SINISTRO) = 'DESLIGA' 
+	TRUNCATE TABLE [dbo].[TB_XLSX_ODS_RENDA_HOSPITALAR] 
+
+IF (SELECT UPPER(LTRIM(RTRIM(NM_REGISTROS_MANUAIS))) FROM TB_XLSX_ODS_LIGA_DESLIGA_SINISTRO) = 'DESLIGA' 
+	TRUNCATE TABLE [dbo].[TB_XLSX_ODS_REGISTROS_MANUAIS] 
+
+
+-- Inicia junção dos sinistros manuais 
+
+ IF OBJECT_ID ('[ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_DRV_SINISTRO_MANUAIS]') IS NOT NULL
+	DROP TABLE [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_DRV_SINISTRO_MANUAIS]
+
+--============================ GERAL =================================
+SELECT 
+	 [NM_N_BENEFICIO]
+	,right(replicate('0',9) + [NM_APOLICE],9)                               as [NM_APOLICE]
+	,[NR_IDADE_DO_SEGURADO_DATA_DO_EVENTO]
+	,[NM_SEXO]
+	,[NM_TIPO_SINISTRO] -- MOTIVO DA SAÍDA
+    ,[DT_DATA_EVENTO]
+    ,[DT_DATA_REGISTRO_SINISTRO_SISTEMA_PLANILHA] -- DATA DO AVISO
+	,[DT_DATA_RETORNO_RECIBO] -- CONFIRMAR SE É A DATA DO PAGAMENTO
+	,[NR_VALOR_CAPITAL_DATA_EVENTO]
+    ,case when [NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS]  is null 
+		then [NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_SEM_DIVIDENDOS]
+		else [NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS] end         as [NR_VALOR_BENEFICIO_PAGO_ATUALIZADO_COM_DIVIDENDOS]
+    ,[NM_SINISTRO_OFICIAL_MANUAL]
+    ,[NM_STATUS_SINISTRO]
+	,right(replicate('0',6) + NM_N_BENEFICIO,6)                               as NR_DI_CLM_ID
+	,''                                                                       as [NM_COBERTURA_BASICA] 
+	,''                                                                       as [NR_QTD_DIARIAS_RENDA_HOSPITALAR]
+	,''                                                                       AS [NR_QTD_DIARIAS_UTI]
+	,''                                                                       AS [NR_VALOR_DA_DIARIA]
+	,''                                                                       AS [NR_VALOR_DO_RESSEGURO]
+	,''                                 									   AS [NM_TAX_PAID_AMT_MANUAIS]
+	,'NAO'                                                                    AS [NM_JUDICIAL]
+	,[DT_DATA_AVISO_SINISTRO_DOCUMENTOS_RECEBIDOS_SEGURADORA]                 AS [DT_AVISO]
+	,case when UPPER(NM_CAUSA_EVENTO) like '%COVID%' then 'S' else 'N' end as [COVID]		
+
+	INTO [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_DRV_SINISTRO_MANUAIS]
+FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_ODS_GERAL]
+
+UNION ALL 
+
+--============================= ASSISTENCIA FUNERAL =======================
+
+SELECT  
+	 [NM_NR_DO_BENEFICIO]
+    ,right(replicate('0',9) + [NM_APOLICE],9)                                 as [NM_APOLICE]
+    ,[NR_IDADE_DO_SEGURADO_DATA_DO_EVENTO]
+    ,[NM_SEXO]
+	,'Assistencia Funeral'                                                AS [NM_TIPO_SINISTRO] 	
+    ,[DT_DATA_DO_EVENTO]
+    ,[DT_DATA_DO_REGISTRO_SINISTRO_SISTEMA_PLANILHA]
+	,[DT_DATA_DO_RETORNO_DO_RECIBO]
+    ,[NR_VALOR_DO_CAPITAL_SEGURADO]
+    ,[NR_VALOR_TOTAL_PAGO]
+    ,[NM_SINISTRO_OFICIAL_MANUAL]
+    ,[NM_STATUS_DO_SINISTRO]
+	,right(replicate('0',6) + [NM_NR_DO_BENEFICIO],6)                          as NR_DI_CLM_ID
+	,''                                                                        as [NM_COBERTURA_BASICA]
+	,''                                                                        as [NR_QTD_DIARIAS_RENDA_HOSPITALAR]
+	,''                                                                        AS [NR_QTD_DIARIAS_UTI]
+	,''                                                                        AS [NR_VALOR_DA_DIARIA]
+	,''                                                                        AS [NR_VALOR_DO_RESSEGURO]
+	,''                                 					    			   AS [NM_TAX_PAID_AMT_MANUAIS]
+	,'NAO'                                                                     AS [NM_JUDICIAL]
+	,[DT_DATA_DO_RECEBIMENTO_DA_DOCUMENTACAO_COMPLETA_NA_SEGURADORA]           AS [DT_AVISO]
+	,''                                                                        as [COVID]
+FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_ODS_ASSISTENCIA_FUNERAL] 
+UNION ALL
+
+--======================= JUDICIAL =========================
+SELECT 
+
+	 [NM_N_DO_BENEFICIO_ANTES_DA_ACAO_JUDICIAL] --ou ,[NM_N_DO_BENEFICIO_JUDICIAL]
+	,right(replicate('0',9) + [NM_APOLICE],9)                                    as [NM_APOLICE] 
+	,'' AS [NR_IDADE_DO_SEGURADO_DATA_DO_EVENTO] 
+	,[NM_SEXO]
+	,[NM_TIPO_DE_SINISTRO]
+	,[DT_DATA_DO_EVENTO]
+	,[DT_DATA_DO_REGISTRO_DO_SINISTRO_NO_SISTEMA_PLANILHA]
+	,[DT_DATA_DO_PAGAMENTO]
+    ,[NR_CAPITAL_TOTAL_PARA_ANALISE]
+	,[NR_VALOR_TOTAL_PAGO_NA_ACAO_JUDICIAL]
+    ,'Manual' AS [NM_SINISTRO_OFICIAL_MANUAL]
+ 	,[NM_STATUS]
+	,right(replicate('0',6) + [NM_N_DO_BENEFICIO_ANTES_DA_ACAO_JUDICIAL],6)       as NR_DI_CLM_ID
+	,''                                                                           as [NM_COBERTURA_BASICA]
+		,''                                                                       as [NR_QTD_DIARIAS_RENDA_HOSPITALAR]
+	,''                                                                           AS [NR_QTD_DIARIAS_UTI]
+	,''                                                                           AS [NR_VALOR_DA_DIARIA]
+	,''                                                                           AS [NR_VALOR_DO_RESSEGURO]
+	,''                                 									      AS [NM_TAX_PAID_AMT_MANUAIS]
+	,'SIM'                                                                        AS [NM_JUDICIAL]
+	, DT_DATA_DO_AVISO_JUDICIAL                                                   AS [DT_AVISO]
+	,''                                                                           as [COVID]
+FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_ODS_JUDICIAL] 
+UNION ALL
+
+--========================== SOBREVIVENCIA =====================
+SELECT 
+	  [NM_SEQUENCIA]                                                            as [NM_NR_DO_BENEFICIO]
+	 ,right(replicate('0',9) + [NM_APOLICE],9)                                  as [NM_APOLICE]
+	 ,[NM_IDADE_DO_SEGURADO_NA_DATA_DO_EVENTO]
+	 ,[NM_SEXO]
+	 ,'Sobrevivência'                                                           AS [NM_TIPO_DE_SINISTRO]
+	 ,[DT_DATA_DA_MATURACAO_DA_APOLICE_EVENTO] -- CONFIRMAR SE É A DATA EVENTO
+	 ,[DT_DATA_DO_REGISTRO_DO_SINISTRO_NO_SISTEMA_PLANILHA]
+	 ,[DT_DATA_DO_RETORNO_DO_RECIBO]
+	 ,[NR_CAPITAL_TOTAL_PARA_ANALISE]
+	 ,[NR_VALOR_TOTAL_DO_BENEFICIO_PAGO] -- CORRIGIR DE DT PARA NR
+	 ,'Manual'                                                                  AS [NM_SINISTRO_OFICIAL_MANUAL]
+	 ,[NM_STATUS]
+	 ,right(replicate('0',6) + [NM_SEQUENCIA] ,6)                               as NR_DI_CLM_ID
+	 ,[NM_COBERTURA_BASICA]
+	 ,''                                                    as [NR_QTD_DIARIAS_RENDA_HOSPITALAR]
+	 ,''                                                                        AS [NR_QTD_DIARIAS_UTI]
+	 ,''                                                                        AS [NR_VALOR_DA_DIARIA]
+	 ,''                                                                        AS [NR_VALOR_DO_RESSEGURO]
+	 ,[NR_VALOR_DE_DESCONTO_DO_IRRF]										    AS [NM_TAX_PAID_AMT_MANUAIS]
+	,'NAO'                                                                      AS [NM_JUDICIAL]
+	,[DT_DATA_DO_RECEBIMENTO_DA_DOCUMENTACAO_COMPLETA_NA_SEGURADORA]            AS [DT_AVISO]
+	,''                                                                         as [COVID]
+ 
+FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_ODS_SOBREVIVENCIA]
+UNION ALL
+--========================= RENDA HOSPITALAR ===================
+SELECT
+	 [NM_NR_DO_BENEFICIO]
+	,right(replicate('0',9) + [NM_APOLICE],9)                                   as [NM_APOLICE]
+	,[NM_IDADE_DO_SEGURADO_NA_DATA_DO_EVENTO]
+	,[NM_SEXO]
+	,'Renda Hospitalar'                                                         AS [NM_TIPO_DE_SINISTRO]
+	,[DT_DATA_DO_EVENTO_INTERNACAO]
+	,[DT_DATA_DO_REGISTRO_DO_SINISTRO_NO_SISTEMA_PLANILHA]
+	,[DT_DATA_DO_RETORNO_DO_RECIBO]
+	,[NR_TOTAL_DO_CAPITAL_SEGURADO_INTERNACAO_SIMPLES]--,[NR_TOTAL_DO_CAPITAL_SEGURADO_INTERNACAO_UTI] ,[NR_TOTAL_DO_CAPITAL_SEGURADO_SIMPLES_UTI]
+	,ISNULL([NM_VALOR_TOTAL_PAGO], '0')
+	,[NM_SINISTRO_OFICIAL_MANUAL]
+	,[NM_STATUS_DO_SINISTRO]
+	,right(replicate('0',6) + [NM_NR_DO_BENEFICIO],6)                          as NR_DI_CLM_ID
+	,''                                                                        as [NM_COBERTURA_BASICA]
+	,[NM_QUANTIDADE_DE_DIARIAS_INTERNACAO_SIMPLES]                             as [NR_QTD_DIARIAS_RENDA_HOSPITALAR]
+	,[NM_QUANTIDADE_DE_DIARIAS_INTERNACAO_UTI]                                 AS [NR_QTD_DIARIAS_UTI]
+	,ISNULL([NR_VALOR_DA_DIARIA], '0')
+	,ISNULL([NR_VALOR_DO_RESSEGURO], '0')
+	,0                                 									   AS [NM_TAX_PAID_AMT_MANUAIS]
+	,'NAO'                                                                     AS [NM_JUDICIAL]
+	,[DT_DATA_DO_AVISO_DO_SINISTRO_DOCUMENTOS_RECEBIDOS_NA_SEGURADORA]         AS [DT_AVISO]
+	,''                                                                        as [COVID]
+
+FROM [ATUARIAL_IFRS17_GAAPTI].[dbo].[TB_XLSX_ODS_RENDA_HOSPITALAR]
+

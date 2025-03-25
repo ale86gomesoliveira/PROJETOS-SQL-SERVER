@@ -1,0 +1,31 @@
+USE [ATUARIAL_IFRS17_GAAPTI]
+GO
+
+/****** Object:  StoredProcedure [dbo].[PRC_ENV_EMAIL]    Script Date: 03-Jan-24 2:07:35 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+ALTER   PROCEDURE [dbo].[PRC_ENV_EMAIL] 
+	(@RECIPIENTS VARCHAR(4000), 
+	@SUBJECT VARCHAR(4000), 
+	@BODY VARCHAR(4000)) AS
+-- PROCEDURE QUE DISPARA O EMAIL
+
+BEGIN
+	EXEC msdb.dbo.sp_send_dbmail
+	@profile_name = 'Default Public Profile',  --- Profile configurado no DatabaseMail...Cada servidor tem o seu Profile_Name
+	@recipients = @RECIPIENTS, --- Destinatarios
+	@subject = @SUBJECT,  --- Assunto do Email
+	@body = @BODY,
+	@body_format = 'html'
+END
+--EXEC PRC_ENV_EMAIL ('pii.pbr.ldti.support@prudential.com', 'INICIO: ETL Import Tpol Iniciado com Sucesso', '<strong>Carga na tabela TB_GEPRO_ODS_TPOL Iniciada com sucesso.</strong>')
+GO
+
+EXEC PRC_ENV_EMAIL ?, 
+'INICIO: ETL Import Tcvg Iniciado com Sucesso', 
+'<strong>Carga na tabela TB_GEPRO_ODS_TCVG Iniciada com sucesso.</strong>'
+
