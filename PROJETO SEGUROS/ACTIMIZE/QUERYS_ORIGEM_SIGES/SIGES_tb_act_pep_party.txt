@@ -1,0 +1,12 @@
+SELECT
+DISTINCT
+TRIM(CD_CONTROLE CONCAT CD_VERIFICADOR) AS Control_Id,
+CD_FILIAL AS Branch_Cd,
+Cd_Verificador AS Verification_Cd,
+Cd_Nosso_Numero AS Number_Cd,
+TRIM(Cd_Identificacao) AS person_Identification_tx,
+TP_PESSOA AS Person_Tp,
+TRIM(DS_NOME) AS Person_Company_Nm,
+DT_NASCIMENTO AS Birth_Date_Dt,
+CD_SEXO AS Gender_Cd
+FROM DBTCTO.TB_PEP PEP
