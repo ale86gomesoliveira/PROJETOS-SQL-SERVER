@@ -1,0 +1,142 @@
+SELECT DISTINCT
+	trim(pol_id) || TRIM(PAYMENT_TYPE) || TRIM(NR_DV_BLOQUETE) || trim(NR_BLOQUETE_UNIFIC) || TRIM(BNFY_SEQ_NUM) || TRIM(PAYMENT_DT_CV) as Message_Key_Id,
+	PAYMENT_AMT as Base_Curr_Amount_Vl,
+	CASE 
+		WHEN (DT_PAGAMENTO IS NULL  AND DT_BAIXA IS NULL) THEN '1900-01-01' 
+		WHEN DT_PAGAMENTO IS NULL THEN DT_BAIXA
+	ELSE DT_PAGAMENTO END 
+	AS Execution_Global_Dh,
+	'' as Full_Message_tx,
+	'' as Additional_Message_Info_tx,
+	'' as Message_Format_tx,
+	'' as Message_Instructions_tx,
+	NR_BLOQUETE_UNIFIC as Message_Ref_Nr,
+	'' as Message_Source_Type_tx,
+	replace(AGT_CMPNST_CRCY_CD, 'RL', 'BRL') as Orig_Curr_Cd,
+	CLI_ADDR_LN_1_TXT as Originator_Address_Line1_tx,
+	CLI_ADDR_LN_2_TXT as Originator_Address_Line2_tx,
+	CLI_ADDR_LN_3_TXT as Originator_Address_Line3_tx,
+	CLI_CITY_NM_TXT as Originator_City_Nm,
+	CLI_CTRY_CD as Originator_Country_cd,
+	trim(replace(replace(replace(CLI_TAX_ID, ' ', ''),'/',''),'-','')) as Originator_Doc_Nr,
+	CLI_CTRY_CD as Originator_Fi_Country_Cd,
+	CPREQ_DESGNT_ID as Originator_Fi_Org_Key_Id,
+	BNK_ID as Originator_Fi_Org_nm,
+	TRIM(CLI_GIV_NM) || ' ' || TRIM(CLI_SUR_NM) as Originator_nm,
+	CASE 
+		WHEN LENGTH(trim(replace(replace(replace(CLI_TAX_ID, ' ', ''),'/',''),'-',''))) = 11 THEN 'PF' 
+		WHEN LENGTH(trim(replace(replace(replace(CLI_TAX_ID, ' ', ''),'/',''),'-',''))) = 14 THEN 'PJ' 
+	ELSE 'NÃO INFORMADO' END as Originator_Party_Type_Cd,
+	'' as Originator_Po_Box_Cd,
+	POL_ISS_LOC_CD as Originator_State_Province_Cd,
+	CLI_PSTL_CD as Originator_Zip_Postcode_Cd,
+	'' as Originator_Add_Info_tx,
+	'BRL' as Bene_Curr_Cd,
+	'' as Beneficiary_Address_Line1_tx,
+	'' as Beneficiary_Address_Line2_tx,
+	'' as Beneficiary_Address_Line3_tx,
+	'' as Beneficiary_City_Nm,
+	'BR' as Beneficiary_Country_Cd,
+	'33061813000140' as Beneficiary_Doc_Nr,
+	'' as Beneficiary_Fi_Country_Cd,
+	'' as Beneficiary_Fi_Org_Key_Id,
+	'' as Beneficiary_Fi_Org_Nm,
+	'PRUDENTIAL DO BRASIL SEGUROS DE VIDA S.A' as Beneficiary_Nm,
+	'' as Beneficiary_Party_Type_Cd,
+	'' as Beneficiary_Po_Box_Cd,
+	'' as Beneficiary_State_Province_Cd,
+	'' as Beneficiary_Zip_Postcode_Cd,
+	'' as Beneficiary_Add_Info_tx,/*mapear a informação que deve estar no campo de descritivo, Por enquanto estará em aberto este campo, deixará vazio*/
+	'' as Intermediary1_Fi_Country_Cd,
+	'' as Intermediary1_Fi_Org_Key_Id,
+	'' as Intermediary1_Fi_Org_nm,
+	'' as Intermediary2_Fi_Country_Cd,
+	'' as Intermediary2_Fi_Org_Key_Id,
+	'' as Intermediary2_Fi_Org_nm,
+	'' as Intermediary3_Fi_Country_Cd,
+	'' as Intermediary3_Fi_Org_Key_Id,
+	'' as Intermediary3_Fi_Org_nm,
+	'' as Intermediary4_Fi_Country_Cd,
+	'' as Intermediary4_Fi_Org_Key_Id,
+	'' as Intermediary4_Fi_Org_nm,
+	'' as Intermediary5_Fi_Country_Cd,
+	'' as Intermediary5_Fi_Org_Key_Id,
+	'' as Intermediary5_Fi_Org_nm,
+	'' as Intermediary6_Fi_Country_Cd,
+	'' as Intermediary6_Fi_Org_Key_Id,
+	'' as Intermediary6_Fi_Org_nm,
+	'' as Intermediary7_Fi_Country_Cd,
+	'' as Intermediary7_Fi_Org_Key_Id,
+	'' as Intermediary7_Fi_Org_nm,
+	'' as Intermediary8_Fi_Country_Cd,
+	'' as Intermediary8_Fi_Org_Key_Id,
+	'' as Intermediary8_Fi_Org_nm,
+	CPREQ_DESGNT_ID as Product_Key_Id,
+	CLI_CTRY_CD as Sending_Fi_Country_Cd,
+	CPREQ_DESGNT_ID as Sending_Fi_Org_Key_Id,
+	BNK_ID as Sending_Fi_Org_nm,
+	'' as Sending_Fi_Add_Info_tx,
+	CLI_CTRY_CD as Receiving_Fi_Country_Cd,
+	CPREQ_DESGNT_ID as Receiving_Fi_Org_Key_Id,
+	'' as Receiving_Fi_Org_nm,
+	'' as Receiving_Fi_Add_Info_tx,
+	'' as Fi_To_Fi_Info_tx,
+	'BR' as Tenant_Cd,
+	PAYMENT_TYPE as Transaction_Code_Cd,
+	'Ingenium' as SOURCE_SYSTEM_CD,
+	VARCHAR_FORMAT(CURRENT TIMESTAMP,'YYYY-MM-DD HH:MM:SS') as INSERT_SCD_DT
+FROM
+	(SELECT DISTINCT 
+		tp.pol_id, 
+		tp.POL_ISS_LOC_CD,
+		tb.BNFY_SEQ_NUM,
+		tb.BNFY_NM,
+		tb.BNFY_TYP_CD,
+		tc.CLI_TAX_ID, 
+		tc.CLI_ID_CRD_NUM, 
+		tc.CLI_GIV_NM,
+		tc.CLI_SUR_NM,
+		tcl.CLI_ADDR_LN_1_TXT,
+		tcl.CLI_ADDR_LN_2_TXT,
+		tcl.CLI_ADDR_LN_3_TXT,
+		tcl.CLI_CITY_NM_TXT,
+		tcl.CLI_CTRY_CD,
+		tcl.CLI_PSTL_CD,
+		tcv.AGT_CMPNST_CRCY_CD,
+		tr.CPREQ_DESGNT_ID,
+		/*te.ETBL_DESC_TXT,*/
+		/*th.TRXN_ID,*/
+		tpmt.PAYMENT_DT AS DT_PAGAMENTO,
+		replace(char(PAYMENT_DT),'/','') AS PAYMENT_DT_CV,
+		tpmt.POLH_DT AS DT_BAIXA,
+		tpmt.NR_BLOQUETE AS NR_BLOQUETE_UNIFIC,
+		tpmt.PAYMENT_AMT,
+		tpmt.PAYMENT_TYPE,
+		tpmt.NR_DV_BLOQUETE,
+		bnk.BNK_ID AS BNK_ID
+	FROM 
+		iprd552.tpol tp 
+			INNER JOIN IPRD552.TBENE tb ON
+				tb.POL_ID = tp.POL_ID
+			INNER JOIN iprd552.tcli tc ON
+				tc.CLI_ID = tb.CLI_ID
+			INNER JOIN iprd552.TCLIA tcl ON
+				tc.CO_ID = tcl.CO_ID 
+				AND tcl.CLI_ID = tc.CLI_ID
+				AND tcl.CLI_ADDR_TYP_CD = 'PR'
+			INNER JOIN (SELECT a.CO_ID, a.POL_ID, b.AGT_CMPNST_CRCY_CD FROM IPRD552.TCVGA a INNER JOIN IPRD552.TAG b ON a.AGT_ID = b.AGT_ID GROUP BY a.CO_ID, a.POL_ID, b.AGT_CMPNST_CRCY_CD) tcv ON /*aqui esta duplicando por causa das colunas CVG_NUM e COMM_AGT_TYP_CD da tabela TCVGA*/
+				tp.CO_ID = tcv.CO_ID 
+				AND tp.POL_ID = tcv.POL_ID
+			INNER JOIN (SELECT POL_CLI_ID, CPREQ_DESGNT_ID FROM iprd552.TREQT GROUP BY POL_CLI_ID, CPREQ_DESGNT_ID) tr ON
+				tp.POL_ID = tr.POL_CLI_ID
+			/*INNER JOIN (SELECT a.POL_ID, b.ETBL_DESC_TXT FROM IPRD552.TENDO a INNER JOIN IPRD552.TEDIT b ON b.ETBL_VALU_ID = a.ENDRS_TYP_CD	AND b.ETBL_TYP_ID IN ('ENDOR','DOCM') AND b.ETBL_LANG_CD = 'F' GROUP BY a.POL_ID, b.ETBL_DESC_TXT) te ON /*adicionei esse relacionamento para o relacionamento abaixo*/
+				te.POL_ID = tp.POL_ID*/
+			/*INNER JOIN (SELECT CO_ID, POL_ID, TRXN_ID FROM iprd552.THI GROUP BY CO_ID, POL_ID, TRXN_ID) th ON /* verificar relacionamento, a tabela THI esta com uma sequencia de varias linhas, para a apolice 000089474 tem a sequencia 999 no campo POL_TRXN_SEQ_NUM*/
+				th.CO_ID = tp.CO_ID 
+				AND th.POL_ID = tp.POL_ID */
+			INNER JOIN IPRD552.TPMT tpmt ON
+ 				tpmt.POL_ID = tp.POL_ID
+			INNER JOIN (SELECT CLI_ID, BNK_ID FROM iprd552.TCBAH a WHERE 	BNK_ACCT_TYP_CD = 'CUR' AND TRXN_DT = (SELECT max(TRXN_DT) FROM iprd552.TCBAH WHERE CLI_ID = a.CLI_ID) GROUP BY CLI_ID, BNK_ID) bnk ON 
+				bnk.CLI_ID = tc.CLI_ID 				
+			WHERE 
+				tp.POL_CSTAT_CD IN ('1','2','3','4'))

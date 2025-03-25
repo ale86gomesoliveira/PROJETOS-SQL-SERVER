@@ -1,0 +1,227 @@
+
+----- ili_tb_act_beneficiary ------
+
+/* HISTORICO DE ALTERAÇÃO
+-- add a concatenação no party_key_id para evitar duplicidade TRIM(TBENE.POL_ID)CONCAT TRIM(TBENE.BNFY_SEQ_NUM) AS Party_Key_Id.
+-- add TBENE.PREV_UPDT_DT AS Is_Active_Dt, pegando data de atualização do cadastro do beneficiario.
+-- retirado da query o mapeamento do numero da apolice no campo Custom_Policy_Number_Nr
+
+*/
+
+SELECT 
+DISTINCT
+TRIM(TBENE.POL_ID)CONCAT TRIM(TBENE.BNFY_SEQ_NUM) AS Party_Key_Id,
+tc.CLI_BTH_DT AS Birth_Incorp_Dt,
+'' AS First_Name_Nm,
+'' AS Middle_Name_Nm,
+'' AS Last_Name_Nm,
+'' AS Maiden_Name_Nm,
+CASE 
+	WHEN tc.cli_sex_CD IS NULL OR tc.cli_sex_CD = '' THEN 'Não informado' 
+	WHEN tc.cli_sex_CD IS NOT NULL 					 THEN tc.cli_sex_CD 
+	END AS Gender_Cd,
+CASE 
+	WHEN T.POL_CSTAT_CD IN ('1','2','3','4') THEN 'ACTIVE'
+    ELSE 'INACTIVE'
+    END AS Is_Active_Nm,
+TBENE.PREV_UPDT_DT AS Is_Active_Dt,
+'' AS Is_To_Be_Deleted_Nm,
+'' AS Party_Classification_Cd,
+CASE 
+	WHEN tc.cli_sex_CD IN ('M','F') 				 THEN 'PF' 
+	WHEN tc.cli_sex_CD = 'C' 						 THEN 'PJ' 
+	WHEN tc.cli_sex_CD IS NULL OR tc.cli_sex_CD = '' THEN 'Não informado'
+	END AS Party_Type_Cd,
+trim(TBENE.BNFY_NM) AS Party_Name_Nm,
+'BR' AS Tenant_Cd,
+'0' AS Partitioning_Key_Id,
+'' AS Party_Alias_Key1_Id,
+'' AS Party_Alias_First_Name1_Nm,
+'' AS Party_Alias_Middle_Name1_Nm,
+'' AS Party_Alias_Last_Name1_Nm,
+'' AS Party_Alias_Maiden_Name1_Nm,
+'' AS Party_Alias_Key2_Nm,
+'' AS Party_Alias_First_Name2_Nm,
+'' AS Party_Alias_Middle_Name2_Nm,
+'' AS Party_Alias_Last_Name2_Nm,
+'' AS Party_Alias_Maiden_Name2_Nm,
+'' AS Party_Alias_Key3_Id,
+'' AS Party_Alias_First_Name3_Nm,
+'' AS Party_Alias_Middle_Name3_Nm,
+'' AS Party_Alias_Last_Name3_Nm,
+'' AS Party_Alias_Maiden_Name3_Nm,
+'' AS Document_Key1_Id,
+trim(replace(replace(replace(TC.CLI_TAX_ID, ' ', ''),'/',''),'-','')) AS Document_Number1_Nr,
+CASE 
+	WHEN tc.cli_sex_CD IN ('M','F') THEN 'CPF' 
+	WHEN tc.cli_sex_CD = 'C' 		THEN 'CNPJ' 
+	END AS Document_Type1_Cd,
+'' AS Issue_Country1_Cd,
+'' AS Issue_State_Province1_Cd,
+'' AS Document_Key2_Id,
+'' AS Document_Number2_Nr,
+'' AS Document_Type2_Cd,
+'' AS Issue_Country2_Cd,
+'' AS Issue_State_Province2_Cd,
+'' AS Document_Key3_Id,
+'' AS Document_Number3_Nr,
+'' AS Document_Type3_Cd,
+'' AS Issue_Country3_Cd,
+'' AS Issue_State_Province3_Cd,
+'' AS Document_Key4_Id,
+'' AS Document_Number4_Nr,
+'' AS Document_Type4_Cd,
+'' AS Issue_Country4_Cd,
+'' AS Issue_State_Province4_Cd,
+'Individual Life Beneficiaries' AS Primary_Party_Business_Unit_Cd,
+'' AS Business_Unit1_Cd,
+'' AS Business_Unit2_Cd,
+'' AS Business_Unit3_Cd,
+'' AS Party_Reference_Id,
+'' AS Email_Relation_Type1_Cd,
+(SELECT TRIM(CLI_CNTCT_ID_TXT) FROM iprd552.tclic c WHERE c.CLI_ID = tclia.cli_id AND CLI_CNTCT_ID_CD = 'EM' LIMIT 1) AS Party_Email_Address1_Nm,
+'' AS Email_Relation_Type2_Cd,
+'' AS Party_Email_Address2_Nm,
+'' AS Phone_Relation_Type1_Cd,
+(SELECT TRIM(CLI_CNTCT_ID_TXT) FROM iprd552.tclic c WHERE c.CLI_ID = tclia.cli_id AND CLI_CNTCT_ID_CD <> 'EM' LIMIT 1) AS Party_Phone1_Nr,
+'' AS Phone_Relation_Type2_Cd,
+'' AS Party_Phone2_Nr,
+'' AS Phone_Relation_Type3_Cd,
+'' AS Party_Phone3_Nr,
+(SELECT DISTINCT CASE WHEN t.CLI_ADDR_TYP_CD = 'PR' THEN 'PRIMARIO' END AS CLI_ADDR_TYP_CD FROM IPRD552.tclia t WHERE t.CLI_ID = tclia.CLI_ID AND t.CLI_ADDR_TYP_CD = 'PR' AND T.CLI_ADDR_LN_1_TXT IS NOT NULL AND T.CLI_ADDR_LN_1_TXT <> '' LIMIT 1) AS Address_Relation_Type1_Cd,
+TRIM(REPLACE(tclia.CLI_ADDR_LN_1_TXT,'              ',' ') CONCAT TRIM(REPLACE(tclia.CLI_ADDR_LN_2_TXT,'                 ',' ') CONCAT TRIM(TCLIA.CLI_ADDR_LN_3_TXT))) AS Address_Line_1_Nm, 
+'' AS Address_Line_2_Nm,
+'' AS Address_Line_3_Nm,
+'' AS Address_Line_4_Nm,
+'' AS Address_Line_5_Nm,
+'' AS Apartment_Suite_Number1_Nr,
+'' AS Building_Number1_Nr,
+trim(cast(replace(tclia.cli_city_nm_txt,'|','') AS nvarchar(50))) AS City1_Nm, 
+CASE 
+	WHEN tclia.CLI_ADDR_LN_1_TXT IS NULL OR tclia.CLI_ADDR_LN_1_TXT = '' THEN '' 
+	WHEN tclia.CLI_ADDR_LN_1_TXT IS NOT NULL THEN tclia.CLI_CTRY_CD 
+	END AS Address_Country1_Cd,
+'' AS Po_Box1_Nm,
+tclia.CLI_CRNT_LOC_CD AS State_Province1_Cd,
+'' AS Street1_Nm,
+(SELECT t.cli_pstl_cd FROM IPRD552.TCLIA t WHERE CLI_ID = TCLIA.CLI_ID AND t.CLI_ADDR_TYP_CD = 'PR') AS Zip_Postcode1_Cd,
+(SELECT DISTINCT CASE WHEN t.CLI_ADDR_TYP_CD = 'PA' THEN 'ENDEREÇO ANTERIOR' END AS CLI_ADDR_TYP_CD FROM IPRD552.tclia t WHERE t.CLI_ID = tclia.CLI_ID AND t.CLI_ADDR_TYP_CD = 'PA' LIMIT 1) AS Address_Relation_Type2_Cd,
+(SELECT TRIM(REPLACE(t.CLI_ADDR_LN_1_TXT,'                ',' ') CONCAT TRIM(REPLACE(t.CLI_ADDR_LN_2_TXT,'                 ',' ') CONCAT TRIM(T.CLI_ADDR_LN_3_TXT))) FROM IPRD552.TCLIA t WHERE CLI_ID = TCLIA.CLI_ID AND t.CLI_ADDR_TYP_CD = 'PA' LIMIT 1) AS Address2_Line_1_Nm,
+'' AS Address2_Line_2_Nm,
+'' AS Address2_Line_3_Nm,
+'' AS Address2_Line_4_Nm,
+'' AS Address2_Line_5_Nm,
+'' AS Apartment_Suite_Number2_Nr,
+'' AS Building_Number2_Nr,
+(SELECT DISTINCT CAST(t.cli_city_nm_txt AS NVARCHAR(50)) FROM IPRD552.tclia t WHERE CLI_ID = tclia.CLI_ID AND t.CLI_ADDR_TYP_CD = 'PA' LIMIT 1) AS City2_Nm,
+(SELECT DISTINCT t.CLI_CTRY_CD FROM IPRD552.tclia t WHERE CLI_ID = tclia.CLI_ID AND t.CLI_ADDR_TYP_CD = 'PA' LIMIT 1) AS Address_Country2_Cd,
+'' AS Po_Box2_Nm,
+(SELECT DISTINCT t.CLI_CRNT_LOC_CD FROM IPRD552.tclia t WHERE CLI_ID = tclia.CLI_ID AND t.CLI_ADDR_TYP_CD = 'PA' LIMIT 1) AS State_Province2_Cd,
+'' AS Street2_Nm,
+(SELECT DISTINCT t.cli_pstl_cd FROM IPRD552.tclia t WHERE CLI_ID = tclia.CLI_ID AND t.CLI_ADDR_TYP_CD = 'PA' LIMIT 1) AS Zip_Postcode2_Cd,
+'' AS Address_Relation_Type3_Cd,
+'' AS Address3_Line_1_Nm,
+'' AS Address3_Line_2_Nm,
+'' AS Address3_Line_3_Nm,
+'' AS Address3_Line_4_Nm,
+'' AS Address3_Line_5_Nm,
+'' AS Apartment_Suite_Number3_Nr,
+'' AS Building_Number3_Nr,
+cast('' AS nvarchar(50)) AS City3_Nm,
+'' AS Address_Country3_Cd,
+'' AS Po_Box3_Nm,
+'' AS State_Province3_Cd,
+'' AS Street3_Nm,
+'' AS Zip_Postcode3_Cd,
+CASE 
+	WHEN tclia.CLI_ADDR_LN_1_TXT IS NULL OR tclia.CLI_ADDR_LN_1_TXT = ''  THEN '' 
+	WHEN tclia.CLI_ADDR_LN_1_TXT IS NOT NULL THEN 'DOMICILIO' 
+	END AS Country_Relation_Type1_Nm,
+CASE 
+	WHEN tclia.CLI_ADDR_LN_1_TXT IS NULL OR tclia.CLI_ADDR_LN_1_TXT = ''  THEN '' 
+	WHEN tclia.CLI_ADDR_LN_1_TXT IS NOT NULL THEN tclia.CLI_CTRY_CD 
+	END AS Country_Relation1_Cd,
+(SELECT 'DOMICILIO' FROM IPRD552.tclia t WHERE CLI_ID = tclia.CLI_ID AND t.CLI_ADDR_TYP_CD = 'PA' LIMIT 1) AS Country_Relation_Type2_Nm,
+(SELECT DISTINCT t.CLI_CTRY_CD FROM IPRD552.tclia t WHERE CLI_ID = tclia.CLI_ID AND t.CLI_ADDR_TYP_CD = 'PA' LIMIT 1)AS Country_Relation2_Cd,
+'' AS Country_Relation_Type3_Nm,
+'' AS Country_Relation3_Cd,
+'' AS Is_Foreign_Financial_Org_Nm,
+'' AS Is_Foreign_Official_Nm,
+'' AS Is_Nbfi_Ds,
+'' AS Is_Non_Resident_Ds,
+'' AS Is_Pep_Ds,
+(VALUES CURRENT_DATE) AS Last_Review_Dt,
+'0' AS Number_Of_Sars_Nr,
+'0' AS Number_Of_Subpoenas_Nr,
+'' AS Occupation_Cd,
+'' AS Organization_Unit_Cd,
+'0' AS Party_Curr_Annual_Income_Vl,
+'NON_PGIM' AS Risk_Segment_Cd, 
+'' AS Region_Cd,
+TBENE.PREV_UPDT_DT AS Row_Update_Dt,
+'' AS Sector_Cd,
+'' AS Is_Our_Employee_Ds,
+'' AS Is_Psp_Ds,
+'' AS Is_Tppp_Ds,
+'' AS Is_Foreign_Corporation_Nm,
+'' AS Primary_Representative_Key_Id,
+'' AS Source_Of_Income_Cd,
+'' AS Party_Status_Cd,
+'' AS Non_Res_Alien_Cd,
+'' AS Number_Of_Dependents_Nr,
+'' AS Tax_Bracket_Cd,
+'' AS Behaviour_Trends_Nm,
+'' AS Client_Level_Opening_Ch_Ds,
+'0' AS Percentage_Pc,
+'' AS Employee_Type_Cd,
+'INGENIUM' AS Source_System_Cd,
+TEDIT.ETBL_DESC_TXT AS Relation_Type_Cd,
+'BENEFICIARY' AS Custom_Role_Ds,
+'' AS Custom_Policy_Number_Nr,
+VARCHAR_FORMAT(CURRENT TIMESTAMP,'YYYY-MM-DD HH:MM:SS') as INSERT_SCD_DT
+FROM IPRD552.TBENE TBENE
+INNER JOIN IPRD552.TCLI TC     ON TC.CLI_ID = TBENE.CLI_ID 
+INNER JOIN iprd552.tclia tclia ON tc.CLI_ID = tclia.cli_id AND tclia.CO_ID = tc.CO_ID 
+INNER JOIN IPRD552.TPOL T ON T.POL_ID = TBENE.POL_ID AND T.CO_ID = TBENE.CO_ID
+INNER JOIN IPRD552.TEDIT TEDIT ON TEDIT.ETBL_VALU_ID = TBENE.BNFY_REL_INSRD_CD
+WHERE tclia.cli_addr_typ_cd = 'PR'
+AND T.POL_CSTAT_CD IN ('1','2','3','4')
+AND TEDIT.ETBL_TYP_ID = 'BTOI'
+AND TEDIT.ETBL_LANG_CD = 'F'
+
+
+/*
+SELECT 
+DISTINCT
+* FROM IPRD552.TBENE TBENE
+WHERE TBENE.CLI_ID = '0000011035'
+*/
+
+/*
+SELECT 
+TBENE.pol_id,
+tbene.BNFY_SEQ_NUM,
+TC.CLI_TAX_ID,
+tbene.CLI_ID,
+tc.cli_id
+FROM IPRD552.TBENE TBENE
+INNER JOIN IPRD552.TCLI TC     ON TC.CLI_ID = TBENE.CLI_ID
+WHERE TBENE.CLI_ID = 0000011035
+
+
+SELECT 
+count (*),
+tbene.pol_id
+FROM IPRD552.TBENE TBENE
+INNER JOIN IPRD552.TCLI TC     ON TC.CLI_ID = TBENE.CLI_ID 
+INNER JOIN iprd552.tclia tclia ON tc.CLI_ID = tclia.cli_id AND tclia.CO_ID = tc.CO_ID 
+INNER JOIN IPRD552.TPOL T ON T.POL_ID = TBENE.POL_ID AND T.CO_ID = TBENE.CO_ID
+INNER JOIN IPRD552.TEDIT TEDIT ON TEDIT.ETBL_VALU_ID = TBENE.BNFY_REL_INSRD_CD
+WHERE tclia.cli_addr_typ_cd = 'PR'
+AND T.POL_CSTAT_CD IN ('1','2','3','4')
+AND TEDIT.ETBL_TYP_ID = 'BTOI'
+AND TEDIT.ETBL_LANG_CD = 'F'
+GROUP BY
+tbene.pol_id
+ORDER BY 1 DESC
+*/
