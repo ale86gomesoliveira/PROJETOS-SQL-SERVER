@@ -1,0 +1,135 @@
+SELECT 
+	rtrim(ltrim(Policy_Nr + Installment_Nr)) as Message_Key_Id,
+	Installment_Vl as Base_Curr_Amount_Vl,
+	Last_Information_Dh as Execution_Global_Dh,
+	'' as Full_Message_tx,
+	'' as Additional_Message_Info_tx,
+	'' as Message_Format_tx,
+	'' as Message_Instructions_tx,
+	Contract_Nr as Message_Ref_Nr,
+	'' as Message_Source_Type_tx,
+	'BRL' as Orig_Curr_Cd,
+	Address_Nm as Originator_Address_Line1_tx,
+	'' as Originator_Address_Line2_tx,
+	'' as Originator_Address_Line3_tx,
+	City_Nm as Originator_City_Nm,
+	Country_Nm as Originator_Country_cd,
+	National_Number_Id as Originator_Doc_Nr,
+	Country_Nm as Originator_Fi_Country_Cd,
+	Bank_Nm as Originator_Fi_Org_Key_Id,
+	Bank_Nm as Originator_Fi_Org_nm,
+	Customer_Nm as Originator_nm,
+	CASE 
+		WHEN LEN(National_Number_Id) = 11 THEN 'PF' 
+		WHEN LEN(National_Number_Id) = 14 THEN 'PJ' 
+	ELSE 'NÃO INFORMADO' END  as Originator_Party_Type_Cd,
+	'' as Originator_Po_Box_Cd,
+	State_Nm as Originator_State_Province_Cd,
+	Postal_Cd as Originator_Zip_Postcode_Cd,
+	'' as Originator_Add_Info_tx,
+	'BRL' as Bene_Curr_Cd,
+	'' as Beneficiary_Address_Line1_tx,
+	'' as Beneficiary_Address_Line2_tx,
+	'' as Beneficiary_Address_Line3_tx,
+	'' as Beneficiary_City_Nm,
+	'BR' as Beneficiary_Country_Cd,
+	'21.986.074/0001-19' as Beneficiary_Doc_Nr,
+	'' as Beneficiary_Fi_Country_Cd,
+	'' as Beneficiary_Fi_Org_Key_Id,
+	'' as Beneficiary_Fi_Org_Nm,
+	'PRUDENTIAL DO BRASIL SEGUROS EM GRUPO S.A' as Beneficiary_Nm,
+	'PJ' as Beneficiary_Party_Type_Cd,
+	'' as Beneficiary_Po_Box_Cd,
+	'' as Beneficiary_State_Province_Cd,
+	'' as Beneficiary_Zip_Postcode_Cd,
+	'' as Beneficiary_Add_Info_tx,/*mapear a informação que deve estar no campo de descritivo, Por enquanto estará em aberto este campo, deixará vazio*/
+	'' as Intermediary1_Fi_Country_Cd,
+	'' as Intermediary1_Fi_Org_Key_Id,
+	'' as Intermediary1_Fi_Org_nm,
+	'' as Intermediary2_Fi_Country_Cd,
+	'' as Intermediary2_Fi_Org_Key_Id,
+	'' as Intermediary2_Fi_Org_nm,
+	'' as Intermediary3_Fi_Country_Cd,
+	'' as Intermediary3_Fi_Org_Key_Id,
+	'' as Intermediary3_Fi_Org_nm,
+	'' as Intermediary4_Fi_Country_Cd,
+	'' as Intermediary4_Fi_Org_Key_Id,
+	'' as Intermediary4_Fi_Org_nm,
+	'' as Intermediary5_Fi_Country_Cd,
+	'' as Intermediary5_Fi_Org_Key_Id,
+	'' as Intermediary5_Fi_Org_nm,
+	'' as Intermediary6_Fi_Country_Cd,
+	'' as Intermediary6_Fi_Org_Key_Id,
+	'' as Intermediary6_Fi_Org_nm,
+	'' as Intermediary7_Fi_Country_Cd,
+	'' as Intermediary7_Fi_Org_Key_Id,
+	'' as Intermediary7_Fi_Org_nm,
+	'' as Intermediary8_Fi_Country_Cd,
+	'' as Intermediary8_Fi_Org_Key_Id,
+	'' as Intermediary8_Fi_Org_nm,
+	Contract_Nr as Product_Key_Id,
+	Country_Nm as Sending_Fi_Country_Cd,
+	'' as Sending_Fi_Org_Key_Id,
+	'' as Sending_Fi_Org_nm,
+	'' as Sending_Fi_Add_Info_tx,
+	Country_Nm as Receiving_Fi_Country_Cd,
+	Bank_Nm as Receiving_Fi_Org_Key_Id,
+	Bank_Nm as Receiving_Fi_Org_nm,
+	'' as Receiving_Fi_Add_Info_tx,
+	'' as Fi_To_Fi_Info_tx,
+	'BR' as Tenant_Cd,
+	Payment_Tp as Transaction_Code_Cd,
+	'SONIC' as SOURCE_SYSTEM_CD,
+	getdate() as INSERT_SCD_DT
+FROM
+	(select
+		cp.Customer_Id,
+		cp.Birth_Dt,
+		cp.Customer_Nm,
+		cp.National_Number_Id,
+		cp.Legal_Nature_Tx,
+		ca.Address_Nm,
+		ca.City_Nm,
+		ca.Country_Nm,
+		ca.Postal_Cd,
+		ca.State_Nm,
+		po.Bank_Nm,
+		po.Contract_Nr,
+		po.Premium_Vl,
+		po.Master_Policy_Nr,
+		po.Last_Information_Dh,
+		it.Installment_Vl,
+		cast(it.Installment_Nr as varchar(10)) as Installment_Nr,
+		it.Payment_Dt,
+		it.Payment_Tp,
+		it.Policy_Nr,
+		cl.Bank_Id,
+		SUBSTRING(it.Source_Key_Id, 0, 10) soucekey_id_cod
+	from 
+		(select distinct Customer_Id, Birth_Dt, Customer_Nm, National_Number_Id, Legal_Nature_Tx, Source_Key_Id from SONIC.piidls_br.mas_tb_customer_profl where Customer_Nm not in ('Customer1 ', 'Customer1', 'Teste Vida ', 'Teste Vida')) cp
+			left join (select Customer_Id, Address_Nm, City_Nm, Country_Nm, Postal_Cd, State_Nm, Source_Key_Id from SONIC.piidls_br.mas_tb_customer_addr where City_Nm is not null  group by Customer_Id, Address_Nm, City_Nm, Country_Nm, Postal_Cd, State_Nm, Source_Key_Id) ca on 
+				cp.Source_Key_Id = ca.Source_Key_Id
+			inner join (select a.Bank_Nm, a.Contract_Nr, a.Premium_Vl, a.Master_Policy_Nr, a.Last_Information_Dh, a.Policy_Nr, a.Customer_Id, a.Source_Key_Id from SONIC.piidls_br.mas_tb_policy a where Last_Information_Dh = (select max(Last_Information_Dh) from SONIC.piidls_br.mas_tb_policy where Policy_Nr = a.Policy_Nr) group by a.Bank_Nm, a.Contract_Nr, a.Premium_Vl, a.Master_Policy_Nr, a.Last_Information_Dh, a.Policy_Nr, a.Customer_Id, a.Source_Key_Id) po on
+				cp.Source_Key_Id = po.Source_Key_Id
+			/*aqui*/inner join (  select
+									 Installment_Vl, Installment_Nr, Payment_Dt, Payment_Tp, Policy_Nr, Source_Key_Id
+									from piidls_br.mas_tb_installment openInst
+									where openInst.Installment_Status = 'Processed'
+									and openInst.Payment_Dt is null
+								-- porém tem que checar se não tem uma linha com pagamento para a mesma parcela
+									and not exists
+									(
+										select * from
+											piidls_br.mas_tb_installment paidInst
+										where
+									(
+											(
+												paidInst.Installment_Status = 'Processed' and paidInst.Payment_Dt is not null
+											 )
+										)
+										and paidInst.Policy_Nr = openInst.Policy_Nr  and paidInst.Installment_Nr = openInst.Installment_Nr)
+									group by Source_Key_Id, Installment_Vl, Installment_Nr, Payment_Dt, Payment_Tp, Policy_Nr, Source_Key_Id
+			) it on
+				po.Source_Key_Id = it.Source_Key_Id
+			left join (select Policy_Nr, Bank_Id, Source_Key_Id from SONIC.piidls_br.mas_tb_claim group by Policy_Nr, Bank_Id, Source_Key_Id) cl on
+				it.Source_Key_Id = cl.Source_Key_Id) as t
