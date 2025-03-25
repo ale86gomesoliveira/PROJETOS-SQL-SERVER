@@ -1,0 +1,42 @@
+SELECT
+
+ ComisDireta.NR_APOLICE,
+  ComisDireta.NR_APOLICESUSEP,
+  ComisDireta.NR_MESPAGOATE,
+  ComisDireta.NR_MESPAGOATE AS NR_MESPAGOATEPARCELA,
+  Agente.Cd_CPD,
+  PagtoCompAgente.NR_CPFCNPJ,
+  PagtoCompAgente.NR_CPFCNPJFORMATADO,
+  PagtoCompAgente.TP_NATJURAGENTE,
+  PagtoCompAgente.NM_BENEFICIARIO,
+  PagtoCompAgente.CD_BANCO,
+  PagtoCompAgente.TP_FORMAPAGTOSISPAG,
+  ComisDireta.VR_COMISDIRETA,
+  InterfaceSisPag.DT_VENCTOPAGTOCOMP,
+  CAST (greatest( PagtoCompAgente.Dt_Alteracao,
+                    PagtoComp.Dt_Alteracao,
+                    CalendarioComp.Dt_Alteracao,
+                    ComisDireta.Dt_Alteracao,
+                    InterfaceSisPag.Dt_Alteracao
+                 ) AS TIMESTAMP) as Dh_PagtoCompAgente
+FROM
+  SAA.PagtoCompAgente
+  , Saa.Agente
+  , SAA.PagtoComp
+  , SAA.CalendarioComp
+  , SAA.ComisDireta
+ , SAA.InterfaceSisPag
+where
+  PagtoCompAgente.Cd_Operacao = 'POB'
+  and PagtoComp.Cd_Operacao = PagtoCompAgente.Cd_Operacao
+  and PagtoComp.Nr_SeqPagtoComp = PagtoCompAgente.Nr_SeqPagtoComp
+  and Agente.Cd_Operacao = PagtoCompAgente.Cd_Operacao
+  and Agente.Cd_Agente = PagtoCompAgente.Cd_Agente
+  and CalendarioComp.Cd_Operacao = PagtoComp.Cd_Operacao
+  and CalendarioComp.Nr_SeqCalendComp = PagtoComp.Nr_SeqCalendComp
+  and ComisDireta.Nr_SeqCalendCompComisDireta = PagtoComp.Nr_SeqCalendComp
+  and ComisDireta.Cd_Operacao = PagtoComp.Cd_Operacao
+  and ComisDireta.Cd_Agente = PagtoCompAgente.Cd_Agente 
+  and InterfaceSisPag.Cd_Operacao = PagtoCompAgente.Cd_Operacao
+  and InterfaceSisPag.Nr_SeqInterfaceSisPag = PagtoCompAgente.Nr_SeqInterfaceSisPag
+  and InterfaceSisPag.Dt_VenctoPagtoComp IS NOT NULL
