@@ -1,0 +1,94 @@
+
+-- SEGURADO
+
+-- SEGURADO
+WITH 
+CTE_ID_ENDERECO_PRINC AS 
+(SELECT 
+COALESCE (T1.ID_PESSOA_END_DEFAULT, T2.ID_PESSOA_END_NULL) AS ID_PESSOA,
+COALESCE (T1.ID_END_DEFAULT, T2.ID_END_NULL) AS ID_ENDERECO
+FROM 
+(SELECT  CE.ID_PESSOA ID_PESSOA_END_DEFAULT, 
+		MAX(CE.ID_ENDERECO) AS ID_END_DEFAULT
+		FROM CORP_ENDERECO CE
+		WHERE (CE.DV_ENDERECO_PADRAO = 1 OR CE.DV_FORA_PADRAO = 1)  
+		GROUP BY CE.ID_PESSOA) AS T1 FULL JOIN
+(SELECT CE.ID_PESSOA ID_PESSOA_END_NULL, 
+	MAX(CE.ID_ENDERECO) AS ID_END_NULL
+	FROM CORP_ENDERECO CE
+	WHERE (CE.DV_ENDERECO_PADRAO IS NULL OR CE.DV_FORA_PADRAO IS NULL)
+	GROUP BY CE.ID_PESSOA) AS T2
+	ON T1.ID_PESSOA_END_DEFAULT = T2.ID_PESSOA_END_NULL
+),
+CTE_ENDERECO AS
+(
+SELECT	CE.ID_PESSOA,
+		CE.ID_ENDERECO,
+		CE.NM_ENDERECO + ' ' + CE.NR_RUA_ENDERECO + ' ' + CE.NM_COMPLEMENTO AS NM_ENDERECO,
+		CE.NM_CEP AS CD_CEP,    
+		CE.NM_CIDADE AS NM_CIDADE,
+		CUF.NM_UF AS NM_UF,
+		CE.id_tp_endereco
+FROM CORP_ENDERECO CE 
+INNER JOIN CTE_ID_ENDERECO_PRINC CTE_END ON CE.ID_ENDERECO = CTE_END.ID_ENDERECO
+LEFT JOIN CORP_UF CUF ON CE.CD_UF = CUF.CD_UF)
+SELECT 
+DISTINCT
+TOP 10000
+cp.Nr_cnpj_cpf AS Party_Key_Id,
+CONVERT(DATE,GETDATE()) AS Birth_Incorp_Dt, --campo opcional
+rtrim(ltrim(cp.pnome)) AS First_Name_Nm,
+rtrim(ltrim(cp.unome)) AS Last_Name_Nm,
+cs.nm_sexo AS Gender_Cd,
+'1' AS Is_Active_Nm,
+CONVERT(DATE,GETDATE()) AS Is_Active_Dt,  -- campo opcional
+CASE WHEN cp.cd_tipo_pessoa = '1' THEN 'PF' WHEN cp.cd_tipo_pessoa = '2' THEN 'PJ' END AS Party_Type_Cd,
+RTRIM(LTRIM(cp.nm_pessoa)) AS Party_Name_Nm,
+'BRA' AS Tenant_Cd,
+'0' AS Partitioning_Key_Id,
+Document_Key1_Id = LEFT( 
+(CASE UPPER(CTP.NM_TIPO_PESSOA) 
+	 WHEN 'FÍSICA' THEN REPLICATE('0', 11 - LEN(CP.NR_CNPJ_CPF)) + cast(CP.NR_CNPJ_CPF as varchar)
+	 WHEN 'JURÍDICA' THEN REPLICATE('0', 14 - LEN(CP.NR_CNPJ_CPF)) + cast(CP.NR_CNPJ_CPF as varchar)
+	 END), 17),
+--replace(replace(replace(TC.CLI_TAX_ID, ' ', ''),'/',''),'-','') AS Document_Number1_Nr,
+'Group Life Insureds' AS Primary_Party_Business_Unit_Cd,
+CE1.id_tp_endereco AS Address_Relation_Type1_Cd,
+ce1.nm_endereco AS Address_Line_1_Nm,
+LTRIM(RTRIM(ce1.nm_cidade)) AS City1_Nm,
+'BRA' AS Address_Country1_Cd,
+ce1.cd_cep AS Zip_Postcode1_Cd,
+'BRA' AS Address_Country2_Cd,
+'BRA' AS Address_Country3_Cd,
+'BRA' AS Country_Relation_Type1_Nm,
+'BRA' AS Country_Relation1_Cd,
+'BRA' AS Country_Relation_Type2_Nm,
+'BRA' AS Country_Relation2_Cd,
+'BRA' AS Country_Relation_Type3_Nm,
+'BRA' AS Country_Relation3_Cd,
+'BRA' AS Is_Foreign_Financial_Org_Nm,
+CONVERT(DATE,GETDATE()) AS Last_Review_Dt,
+'0' AS Number_Of_Sars_Nr,
+'0' AS Number_Of_Subpoenas_Nr,
+'NON_PGIM' AS Risk_Segment_Cd,
+ltrim(rtrim(CE1.NM_UF)) AS Region_Cd,
+CONVERT(DATE,GETDATE()) AS Row_Update_Dt,
+'NACIS' AS Sector_Cd,
+'0' AS Number_Of_Dependents_Nr,
+'0.00' AS Percentage_Pc,
+'I4PRO' AS Source_System_Cd,
+ctr.Cd_tp_registro AS Relation_Type_Cd,
+ltrim(rtrim(ctr.Nm_tp_registro)) AS Custom_Role_Ds,
+AP.CD_APOLICE AS Custom_Policy_Number_Nr
+FROM CORP_PESSOAS CP WITH (NOLOCK)
+INNER JOIN CORP_TP_PESSOA CTP WITH (NOLOCK) ON CP.CD_TIPO_PESSOA = CTP.CD_TIPO_PESSOA
+INNER JOIN CORP_TP_REGISTRO CTR WITH (NOLOCK) ON CP.CD_TP_REGISTRO = CTR.CD_TP_REGISTRO
+INNER JOIN CORP_APOLICE AP WITH (NOLOCK) ON AP.Id_pessoa_cliente = CP.ID_PESSOA
+LEFT JOIN CORP_SEXO CS WITH (NOLOCK) ON CS.ID_SEXO = CP.ID_SEXO
+LEFT JOIN CTE_ENDERECO AS CE1 ON CP.ID_PESSOA = CE1.ID_PESSOA
+where ctr.Cd_tp_registro = 3  -- PEGANDO SÓ O QUE É SEGURADO.
+
+
+
+
+

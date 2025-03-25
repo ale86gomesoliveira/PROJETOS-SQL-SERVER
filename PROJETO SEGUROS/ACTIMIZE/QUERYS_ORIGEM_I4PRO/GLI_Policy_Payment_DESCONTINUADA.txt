@@ -1,0 +1,98 @@
+
+--QUERY REFERENTE A PAGAMENTO DE PREMIO.
+select 
+distinct
+replace(pp.Id_pagamento,'|','') as Message_Key_Id,
+max(pp.vl_pagamento) as  Base_Curr_Amount_Vl,
+pp.dt_registro as Execution_Global_Dh,
+--'' AS Additional_Message_Info_tx,
+LTRIM(RTRIM(replace(replace(replace(replace(replace(replace(pp.nm_obs_pagamento,'?',''),'|',''),char(13)+char(10),''),'    ',''),'  ',''),':',''))) AS Additional_Message_Info_tx, -- campo com mensagem adicional
+'' AS Message_Instructions_tx,
+--LTRIM(RTRIM(replace(pp.nm_obs_pagamento,'?',''))) AS Message_Instructions_tx,
+pp.Id_pagamento AS Message_Ref_Nr,
+'BRL' as Orig_Curr_Cd,
+CONCAT(ltrim(rtrim(replace(replace(replace(CPE.nm_endereco,'?',''),char(13)+char(10),''),'|',''))),ltrim(rtrim(replace(nr_rua_endereco,'|',''))),ltrim(rtrim(replace(nm_complemento,'|',''))),ltrim(rtrim(replace(nm_bairro,'|','')))) as Originator_Address_Line1_tx,
+rtrim(ltrim(replace(replace(CPE.nm_endereco,'?',''),char(13)+char(10),''))) as Originator_Address_Line2_tx,
+rtrim(ltrim(replace(replace(CPE.nm_endereco,'?',''),char(13)+char(10),''))) as Originator_Address_Line3_tx,
+Rtrim(Ltrim(CPE.nm_cidade)) as Originator_City_Nm,
+'BRA' as Originator_Country_cd,
+REPLACE(REPLACE(cp.Nr_cnpj_cpf,'-',''),'/','') as Originator_Doc_Nr,
+'BRA' as Originator_Fi_Country_Cd,
+pp.nr_banco as Originator_Fi_Org_Key_Id,
+rtrim(ltrim(cbc.nm_banco)) as Originator_Fi_Org_nm,
+RTRIM(LTRIM(cp.Nm_pessoa)) AS Originator_nm,
+CF.Nm_uf as Originator_State_Province_Cd,
+CPE.nm_cep as Originator_Zip_Postcode_Cd,
+rtrim(ltrim(CP.Nm_pessoa)) AS Originator_Add_Info_tx,
+cp.id_pessoa as Bene_Curr_Cd,
+'Av Alm Barroso 52 Centro Rio de Janeiro' AS Beneficiary_Address_Line1_tx,
+'Ed Marques dos Reis Centro Rio de Janeiro' AS Beneficiary_Address_Line2_tx,
+'Av República do Chile 330 Torre Leste Centro Rio de Janeiro' AS Beneficiary_Address_Line3_tx,
+--ltrim(rtrim(replace(CPE.nm_endereco,'?',''))) AS Beneficiary_Address_Line1_tx,
+--rtrim(ltrim(replace(CPE.nm_endereco,'?',''))) AS Beneficiary_Address_Line2_tx,
+--rtrim(ltrim(replace(CPE.nm_endereco,'?',''))) AS Beneficiary_Address_Line3_tx,
+Rtrim(Ltrim(CPE.nm_cidade)) AS Beneficiary_City_Nm,
+'BRA' as Beneficiary_Country_Cd,
+ca.id_pessoa_cliente AS Beneficiary_Doc_Nr,
+'BRA' as Beneficiary_Fi_Country_Cd,
+'' AS Beneficiary_Fi_Org_Key_Id,
+'' as Beneficiary_Fi_Org_Nm,
+ltrim(rtrim(CP.Nm_pessoa)) as Beneficiary_Nm,
+'PJ' AS Beneficiary_Party_Type_Cd,
+'RJ' AS Beneficiary_State_Province_Cd,
+'20031-000' AS Beneficiary_Zip_Postcode_Cd,
+'Prudential é a beneficiaria referente ao pagamento da apolice' AS Beneficiary_Add_Info_tx,
+'BRA' as Intermediary1_Fi_Country_Cd,
+'' AS Intermediary1_Fi_Org_Key_Id,
+'' AS Intermediary1_Fi_Org_nm,
+'BRA'  as Intermediary8_Fi_Country_Cd,
+ca.Cd_apolice AS Product_Key_Id,
+'BRA'  as Sending_Fi_Country_Cd,
+pp.nr_banco AS Sending_Fi_Org_Key_Id,
+rtrim(ltrim(cbc.nm_banco)) AS Sending_Fi_Org_nm,
+''AS Sending_Fi_Add_Info_tx,
+--LTRIM(RTRIM(replace(pp.nm_obs_pagamento,'?',''))) AS Sending_Fi_Add_Info_tx,
+'BRA'  as Receiving_Fi_Country_Cd,
+'341' AS Receiving_Fi_Org_Key_Id,
+'Caixa Economica Federal' as Receiving_Fi_Org_nm,
+'Prudential' AS Receiving_Fi_Add_Info_tx,
+--LTRIM(RTRIM(replace(pp.nm_obs_pagamento,'?',''))) AS Fi_To_Fi_Info_tx,
+ '' AS Fi_To_Fi_Info_tx,
+'BRA'  AS Tenant_Cd,
+'I4Pro' AS Transaction_Code_Cd
+ FROM dbo.corp_apolice ca
+INNER JOIN dbo.corp_sub_estipulante cse		ON ca.id_apolice = cse.id_apolice
+INNER JOIN dbo.corp_endosso ce 				ON ce.id_sub = cse.id_sub
+INNER JOIN dbo.corp_endosso_parcela cep		ON ce.id_endosso = cep.id_endosso
+INNER JOIN corp_endosso_item_vida ceiv 		ON ceiv.id_endosso	= ce.id_endosso
+INNER JOIN corp_pessoas cp                  ON cp.id_pessoa = ca.Id_pessoa_cliente
+INNER JOIN corp_item_vida civ 				ON civ.id_pessoa_item = cp.id_pessoa	--= ceiv.id_pessoa_item
+INNER JOIN dbo.corp_parc_movto cpm 			ON cep.id_parcela = cpm.id_parcela
+INNER JOIN dbo.corp_pagamentos pp 			ON pp.Id_pagamento = cpm.Id_pagamento
+--INNER JOIN corp_recibo_pagamentos cpo        ON cpo.id_pessoa = cp.Id_pessoa and cpo.id_lancamento = pp.id_lancamento
+LEFT JOIN corp_banco cbc                    ON cbc.Nr_banco = PP.nr_banco
+LEFT JOIN corp_endereco cpe                 ON cpe.id_pessoa = cp.id_pessoa and cpe.dv_endereco_padrao = '1' -- pegando o endereço principal. 
+LEFT JOIN corp_uf cf                        ON cf.Cd_uf = cpe.cd_uf 
+where pp.Id_pagamento not in ('2973131','2973135')
+--where pp.id_pagamento in ('1683801','1775853','1775854','1858409','2069686','2584113','1655957','1655958')
+group by
+replace(pp.Id_pagamento,'|',''),
+pp.dt_registro,
+LTRIM(RTRIM(replace(replace(replace(replace(replace(replace(pp.nm_obs_pagamento,'?',''),'|',''),char(13)+char(10),''),'    ',''),'  ',''),':',''))),
+pp.Id_pagamento,
+CONCAT(ltrim(rtrim(replace(replace(replace(CPE.nm_endereco,'?',''),char(13)+char(10),''),'|',''))),ltrim(rtrim(replace(nr_rua_endereco,'|',''))),ltrim(rtrim(replace(nm_complemento,'|',''))),ltrim(rtrim(replace(nm_bairro,'|','')))),
+rtrim(ltrim(replace(replace(CPE.nm_endereco,'?',''),char(13)+char(10),''))),
+Rtrim(Ltrim(CPE.nm_cidade)),
+REPLACE(REPLACE(cp.Nr_cnpj_cpf,'-',''),'/',''),
+pp.nr_banco,
+RTRIM(LTRIM(cp.Nm_pessoa)),
+CP.Cd_tipo_pessoa,
+CF.Nm_uf,
+CPE.nm_cep,
+cbc.nm_banco,
+CP.Nm_pessoa,
+cp.id_pessoa,
+ltrim(rtrim(replace(CPE.nm_endereco,'?',''))),
+ca.id_pessoa_cliente,
+CPE.nm_cep,
+CA.Cd_apolice

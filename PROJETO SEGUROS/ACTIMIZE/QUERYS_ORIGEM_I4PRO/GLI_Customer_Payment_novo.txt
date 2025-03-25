@@ -1,0 +1,140 @@
+
+/*
+Duvidas ao Kaue
+Qual seria a estrutura para pegar o recebimento de premio quando o cliente paga para a Prudential?
+R: corp_parc_movto onde o cd_evento seja o "201 - Cobrança"
+
+Precisamos buscar no i4pro somente os pagamentos de premio e ou sinistros a serem efetuados
+R:na tabela corp_pagamentos, tudo que o campo "id_lancamento" estiver nulo é porque o pagamento ainda não foi efetuado
+
+A corp_parcela_movto também só tem pagamentos que foram de fato efetuados correto?
+R:Não, lá tem as movimentações de parcela, se a parcela (id_parcela) não tiver como seu ultimo movimento (corp_parc_movto) o evento 201, quer dizer que ela não foi paga.
+
+Tira uma duvida por favor. Em produção também temos poucos registros com essa condição de pagamentos ainda não efetuados ( where corp_pagamentos.id_lancamento is null)
+R: Sim. Um pagamento fica pouco tempo sem ter um recibo atrelado a ele, essa á uma situação temporária
+
+Essa condição (where corp_pagamentos.id_lancamento is null) também serve para pagamentos a serem efetuados quando ocorre um Sinistro?
+R:Isso são pagamentos que a Prudential irá fazer, mas ainda não fez. Pode ser sinistro, comissão, repasse a congênere e etc... pagamentos em geral
+
+Esse cd_tp_registro na corp_pagamentos vai ser sempre 1 = corretor, eu tenho esses 145 null, o resto é tudo = 1
+R:Não, o pagamento pode ser feito para outras figuras além de corretor, como para clientes em uma indenização de sinistros por exemplo. Nesse caos o cd_tp_registro seria diferente de 1
+
+Para pagamento de premio por exemplo, eu paguei o valor da apolice para prudential, qual seria o cd_tp_registro na corp_pagamentos?
+R:Pagamento de premio não entra ai, ai só entra valores a serem pagos pela prudential, comissão, sinistros, cosseguro, congênere.
+
+Eu preciso pagar o valor de uma apolice para prudential, onde fica esse pagamento
+R: Não existe prÊmio na corp_pagamentos, ficam na corp_parc_movto
+
+*/
+
+-- CUSTOMER PAYMENT REFERENTE A PAGAMENTO DE SINISTRO.
+
+with 
+cte_endereco_prudential as  -- Pegando os dados da Prudential
+(
+	select 	
+	Cd_empresa,	
+	Nr_cnpj,
+	Nm_empresa,	
+	Nm_reduzido,
+	nm_cep,
+	nm_cidade,
+	nm_complemento,
+	cd_uf,
+	nm_endereco, 
+	nr_rua_endereco 
+	from corp_empresa
+)
+select 
+distinct
+pp.Id_pagamento 											as Message_Key_Id,
+--concat(pp.Id_pagamento,cs.nr_sinistro) as Message_Key_Id, chave enviada anteriormente
+replace(pp.vl_pagamento,'|','') 							as Base_Curr_Amount_Vl,
+convert(smalldatetime, pp.dt_registro) 						as Execution_Global_Dh,
+'' 															AS Additional_Message_Info_tx,
+'' 															AS Message_Instructions_tx,
+''															AS Message_Ref_Nr,
+'BRL'														AS Orig_Curr_Cd,
+ltrim(rtrim(ep.nm_endereco+ep.nr_rua_endereco+ep.nm_complemento)) AS Originator_Address_Line1_tx,
+''															AS Originator_Address_Line2_tx,
+''															AS Originator_Address_Line3_tx,
+ep.nm_cidade												AS Originator_City_Nm,
+'BR'														AS Originator_Country_cd,
+ep.Nr_cnpj													AS Originator_Doc_Nr,
+'BR'														AS Originator_Fi_Country_Cd,
+''															AS Originator_Fi_Org_Key_Id,
+''															AS Originator_Fi_Org_nm,
+ep.Nm_empresa												AS Originator_nm,
+CASE WHEN ep.cd_uf = '1' THEN 'SP'	END						AS Originator_State_Province_Cd,
+ep.nm_cep													AS Originator_Zip_Postcode_Cd,
+''															AS Originator_Add_Info_tx,
+'BRL'														AS Bene_Curr_Cd,
+CONCAT(ltrim(rtrim(replace(CE.nm_endereco,'|',''))),ltrim(rtrim(replace(ce.nr_rua_endereco,'|',''))),ltrim(rtrim(replace(ce.nm_complemento,'|',''))),ltrim(rtrim(replace(ce.nm_bairro,'|','')))) AS Beneficiary_Address_Line1_tx,
+''													AS Beneficiary_Address_Line2_tx,
+''													AS Beneficiary_Address_Line3_tx,
+Rtrim(Ltrim(replace(CE.nm_cidade,'|','')))			AS Beneficiary_City_Nm,
+'BR'												as Beneficiary_Country_Cd,
+REPLACE(REPLACE(REPLACE(CP.Nr_cnpj_cpf,'|',''),'-',''),'/','')	AS Beneficiary_Doc_Nr,
+'BR'												as Beneficiary_Fi_Country_Cd,
+replace(cbc.Nr_banco,'|','')						AS Beneficiary_Fi_Org_Key_Id,
+replace(cbc.Nm_banco,'|','')						as Beneficiary_Fi_Org_Nm,
+ltrim(rtrim(CP.Nm_pessoa))							AS Beneficiary_Nm,
+CASE 
+	WHEN CP.CD_TIPO_PESSOA = '1' THEN 'PF'
+	WHEN CP.CD_TIPO_PESSOA = '2' THEN 'PJ' END		AS Beneficiary_Party_Type_Cd,
+CE.cd_uf											AS Beneficiary_State_Province_Cd,
+CE.nm_cep											AS Beneficiary_Zip_Postcode_Cd,
+''													AS Beneficiary_Add_Info_tx,
+''													AS Intermediary1_Fi_Country_Cd,
+''													AS Intermediary1_Fi_Org_Key_Id,
+''													AS Intermediary1_Fi_Org_nm,
+''													AS Intermediary8_Fi_Country_Cd,
+''													AS Product_Key_Id,
+'BR'												AS Sending_Fi_Country_Cd,
+''													AS Sending_Fi_Org_Key_Id,
+''												   	AS Sending_Fi_Org_nm,
+''													AS Sending_Fi_Add_Info_tx,
+'BR'												as Receiving_Fi_Country_Cd,
+cbc.Nr_banco										AS Receiving_Fi_Org_Key_Id,
+replace(cbc.Nm_banco,'|','')						as Receiving_Fi_Org_nm,
+''													AS Receiving_Fi_Add_Info_tx,
+''													AS Fi_To_Fi_Info_tx,
+'BR'  												AS Tenant_Cd,
+cmp.nm_meio_pagamento 								AS Transaction_Code_Cd,
+'I4PRO' 											AS Source_System_Cd,
+getdate()											AS INSERT_SCD_DT
+  FROM corp_sin_global csg
+  INNER JOIN corp_sinistro cs 				  With (nolock) on cs.id_sin_global = csg.id_sin_global
+  INNER JOIN corp_sin_documento csd			  with (nolock) on csd.nr_sinistro = cs.nr_sinistro
+  INNER JOIN corp_sin_movto csm 			  with (nolock)	on csm.nr_sinistro = cs.nr_sinistro
+  INNER JOIN corp_evento ce2                  with (nolock) on ce2.Cd_evento = csm.cd_evento
+  INNER JOIN corp_pessoas cp				  with (nolock) on cp.id_pessoa = csg.id_pessoa_sinistrado
+  INNER JOIN corp_pagamentos pp				  with (nolock) on pp.id_chave_origem = csm.id_sin_movto 
+  --INNER JOIN corp_pagamentos pp				  with (nolock) on pp.id_pessoa = cp.id_pessoa
+  --INNER JOIN corp_recibo_pagamentos crp 	  with (nolock)	on crp.id_lancamento = pp.id_lancamento -- pagamentos efetuados
+  LEFT JOIN corp_meio_pagamento cmp   	  	  with (nolock) on cmp.id_meio_pagamento = pp.id_meio_pagamento -- meio de pagamento utilizado.
+  LEFT JOIN corp_banco cbc					  with (nolock)	on cbc.Nr_banco = pp.nr_banco
+  LEFT JOIN cte_endereco_prudential ep        with (nolock) on ep.Cd_empresa = cp.cd_empresa
+  LEFT JOIN corp_endereco ce	              with (nolock)	on CE.Id_pessoa = CP.Id_pessoa and ce.dv_endereco_padrao = 1 and dv_fora_padrao is not null
+  WHERE  pp.id_lancamento is null -- CONDIÇÃO PARA PAGAMENTOS A SEREM EFETUADOS.
+
+
+  /*
+  select 
+  count(distinct pp.id_pagamento), -- 642442
+  pp.id_pagamento
+  FROM corp_sin_global csg
+  INNER JOIN corp_sinistro cs 				  With (nolock) on cs.id_sin_global = csg.id_sin_global
+  INNER JOIN corp_sin_documento csd			  with (nolock) on csd.nr_sinistro = cs.nr_sinistro
+  INNER JOIN corp_sin_movto csm 			  with (nolock)	on csm.nr_sinistro = cs.nr_sinistro
+  INNER JOIN corp_evento ce2                  with (nolock) on ce2.Cd_evento = csm.cd_evento
+  INNER JOIN corp_pessoas cp				  with (nolock) on cp.id_pessoa = csg.id_pessoa_sinistrado
+  INNER JOIN corp_pagamentos pp				  with (nolock) on pp.id_chave_origem = csm.id_sin_movto 
+  --INNER JOIN corp_recibo_pagamentos crp 	  with (nolock)	on crp.id_lancamento = pp.id_lancamento -- pagamentos efetuados
+  LEFT JOIN corp_meio_pagamento cmp   	  	  with (nolock) on cmp.id_meio_pagamento = pp.id_meio_pagamento -- meio de pagamento utilizado.
+  LEFT JOIN corp_banco cbc					  with (nolock)	on cbc.Nr_banco = pp.nr_banco
+  LEFT JOIN corp_endereco CE	              with (nolock)	on CE.Id_pessoa = CP.Id_pessoa and ce.dv_endereco_padrao = 1 and dv_fora_padrao is not null
+  WHERE pp.id_lancamento is null
+  group by pp.id_pagamento
+  having count(distinct pp.id_pagamento) =1
+  */

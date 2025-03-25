@@ -1,0 +1,185 @@
+
+-- acrescentado as colunas pnome e unome
+-- acrescentado todos os ltrim e rtrim nos campos que contem textos.
+-- acrescentado os convert(date,getdate()) nos campos de data.
+
+SELECT *  
+from 
+(
+select DISTINCT 
+p.Id_pessoa  as 	Party_Key_Id	 ,
+convert(date,getdate()) 		as 	Birth_Incorp_Dt	 ,
+RTRIM(LTRIM(p.pnome))	as First_Name_Nm	 ,
+null 		as 	Middle_Name_Nm	 ,
+RTRIM(LTRIM(p.unome)) 	as 	Last_Name_Nm	 ,
+null 		as 	Maiden_Name_Nm	 ,
+s.nm_sexo		 as Gender_Cd	 ,
+null as 	Is_Active_Nm	 ,
+convert(Date,getdate()) as 	Is_Active_Dt	 ,
+null as 	Is_To_Be_Deleted_Nm	 ,
+null as 	Party_Classification_Cd	 ,
+p.Cd_tipo_pessoa as 	Party_Type_Cd	 ,
+RTRIM(LTRIM(p.nm_pessoa)) as 	Party_Name_Nm	 ,
+'BRA' as 	Tenant_Cd	 ,
+'0' as 	Partitioning_Key_Id	 ,
+null as 	Party_Alias_Key1_Id	 ,
+null as 	Party_Alias_First_Name1_Nm	 ,
+null as 	Party_Alias_Middle_Name1_Nm	 ,
+null as 	Party_Alias_Last_Name1_Nm	 ,
+null as 	Party_Alias_Maiden_Name1_Nm	 ,
+null as 	Party_Alias_Key2_Nm	 ,
+null as 	Party_Alias_First_Name2_Nm	 ,
+null as 	Party_Alias_Middle_Name2_Nm	 ,
+null as 	Party_Alias_Last_Name2_Nm	 ,
+null as 	Party_Alias_Maiden_Name2_Nm	 ,
+null as 	Party_Alias_Key3_Id	 ,
+null as 	Party_Alias_First_Name3_Nm	 ,
+null as 	Party_Alias_Middle_Name3_Nm	 ,
+null as 	Party_Alias_Last_Name3_Nm	 ,
+null as 	Party_Alias_Maiden_Name3_Nm	 ,
+null as 	Document_Key1_Id	 ,
+null as 	Document_Number1_Nr	 ,
+null as 	Document_Type1_Cd	 ,
+null as 	Issue_Country1_Cd	 ,
+null as 	Issue_State_Province1_Cd	 ,
+null as 	Document_Key2_Id	 ,
+null as 	Document_Number2_Nr	 ,
+null as 	Document_Type2_Cd	 ,
+null as 	Issue_Country2_Cd	 ,
+null as 	Issue_State_Province2_Cd	 ,
+null as 	Document_Key3_Id	 ,
+null as 	Document_Number3_Nr	 ,
+null as 	Document_Type3_Cd	 ,
+null as 	Issue_Country3_Cd	 ,
+null as 	Issue_State_Province3_Cd	 ,
+null as 	Document_Key4_Id	 ,
+null as 	Document_Number4_Nr	 ,
+null as 	Document_Type4_Cd	 ,
+null as 	Issue_Country4_Cd	 ,
+null as 	Issue_State_Province4_Cd	 ,
+'Group Life Brokers' as 	Primary_Party_Business_Unit_Cd	 ,
+null as 	Business_Unit1_Cd	 ,
+null as 	Business_Unit2_Cd	 ,
+null as 	Business_Unit3_Cd	 ,
+null as 	Party_Reference_Id	 ,
+null as 	Email_Relation_Type1_Cd	 ,
+null as 	Party_Email_Address1_Nm	 ,
+null as 	Email_Relation_Type2_Cd	 ,
+null as 	Party_Email_Address2_Nm	 ,
+null as 	Phone_Relation_Type1_Cd	 ,
+null as 	Party_Phone1_Nr	 ,
+null as 	Phone_Relation_Type2_Cd	 ,
+null as 	Party_Phone2_Nr	 ,
+null as 	Phone_Relation_Type3_Cd	 ,
+null as 	Party_Phone3_Nr	 ,
+e.id_tp_endereco as 	Address_Relation_Type1_Cd	 ,
+RTRIM(LTRIM(e.nm_endereco)) as 	Address_Line_1_Nm	 ,
+null as 	Address_Line_2_Nm	 ,
+null as 	Address_Line_3_Nm	 ,
+null as 	Address_Line_4_Nm	 ,
+null as 	Address_Line_5_Nm	 ,
+null as 	Apartment_Suite_Number1_Nr	 ,
+null as 	Building_Number1_Nr	 ,
+RTRIM(LTRIM(e.nm_cidade)) as 	City1_Nm	 ,
+'BRA' as 	Address_Country1_Cd	 ,
+null as 	Po_Box1_Nm	 ,
+null as 	State_Province1_Cd	 ,
+null as 	Street1_Nm	 ,
+e.nm_cep as 	Zip_Postcode1_Cd	 ,
+e2.id_tp_endereco as 	Address_Relation_Type2_Cd	 ,
+RTRIM(LTRIM(e2.nm_endereco)) as 	Address2_Line_1_Nm	 ,
+null as 	Address2_Line_2_Nm	 ,
+null as 	Address2_Line_3_Nm	 ,
+null as 	Address2_Line_4_Nm	 ,
+null as 	Address2_Line_5_Nm	 ,
+null as 	Apartment_Suite_Number2_Nr	 ,
+null as 	Building_Number2_Nr	 ,
+RTRIM(LTRIM(e2.nm_cidade)) as 	City2_Nm	 ,
+'BRA' as 	Address_Country2_Cd	 ,
+null as 	Po_Box2_Nm	 ,
+null as 	State_Province2_Cd	 ,
+null as 	Street2_Nm	 ,
+e2.nm_cep as 	Zip_Postcode2_Cd	 ,
+e3.id_tp_endereco as 	Address_Relation_Type3_Cd	 ,
+RTRIM(LTRIM(e3.nm_endereco))  as 	Address3_Line_1_Nm	 ,
+null as 	Address3_Line_2_Nm	 ,
+null as 	Address3_Line_3_Nm	 ,
+null as 	Address3_Line_4_Nm	 ,
+null as 	Address3_Line_5_Nm	 ,
+null as 	Apartment_Suite_Number3_Nr	 ,
+null as 	Building_Number3_Nr	 ,
+LTRIM(RTRIM(e3.nm_cidade)) as 	City3_Nm	 ,
+'BRA' as 	Address_Country3_Cd	 ,
+null as 	Po_Box3_Nm	 ,
+null as 	State_Province3_Cd	 ,
+null as 	Street3_Nm	 ,
+e3.nm_cep as 	Zip_Postcode3_Cd	 ,
+'BRA' as 	Country_Relation_Type1_Nm	 ,
+'BRA' as 	Country_Relation1_Cd	 ,
+'BRA' as 	Country_Relation_Type2_Nm	 ,
+'BRA' as 	Country_Relation2_Cd	 ,
+'BRA' as 	Country_Relation_Type3_Nm	 ,
+'BRA' as 	Country_Relation3_Cd	 ,
+null as 	Is_Foreign_Financial_Org_Nm	 ,
+null as 	Is_Foreign_Official_Nm	 ,
+null as 	Is_Nbfi_Ds	 ,
+null as 	Is_Non_Resident_Ds	 ,
+null as 	Is_Pep_Ds	 ,
+convert(date,getdate()) as 	Last_Review_Dt	 ,
+null as 	Number_Of_Sars_Nr	 ,
+null as 	Number_Of_Subpoenas_Nr	 ,
+null as 	Occupation_Cd	 ,
+null as 	Organization_Unit_Cd	 ,
+null as 	Party_Curr_Annual_Income_Vl	 ,
+'NON_PGIM' as 	Risk_Segment_Cd	 ,
+e.cd_uf as 	Region_Cd	 ,
+convert(Date,getdate()) as 	Row_Update_Dt	 ,
+RTRIM(LTRIM(p.nm_setor)) as 	Sector_Cd	 ,
+null as 	Is_Our_Employee_Ds	 ,
+null as 	Is_Psp_Ds	 ,
+null as 	Is_Tppp_Ds	 ,
+null as 	Is_Foreign_Corporation_Nm	 ,
+null as 	Primary_Representative_Key_Id	 ,
+null as 	Source_Of_Income_Cd	 ,
+null as 	Party_Status_Cd	 ,
+null as 	Non_Res_Alien_Cd	 ,
+null as 	Number_Of_Dependents_Nr	 ,
+null as 	Tax_Bracket_Cd	 ,
+null as 	Behaviour_Trends_Nm	 ,
+null as 	Client_Level_Opening_Ch_Ds	 ,
+null as 	Percentage_Pc	 ,
+null as 	Employee_Type_Cd	 ,
+'I4Pro' as 	Source_System_Cd	 ,
+null as 	Relation_Type_Cd	 ,
+null as 	Custom_Role_Ds	 ,
+rtrim(ltrim(a.Cd_Apolice)) as 	Custom_Policy_Number_Nr	 
+
+  FROM i4Pro_Teste.dbo.corp_pessoas p
+
+left join  --i4Pro_Teste.dbo.corp_endereco e on e.Id_pessoa = p.Id_pessoa and e.nr_sequencia= 1
+(
+SELECT Id_pessoa, nr_sequencia, id_tp_endereco, nm_endereco, nm_cidade, nm_cep,cd_uf,
+RANK() OVER   (PARTITION BY Id_pessoa  ORDER BY id_endereco,  nr_sequencia ASC ) AS Rank 
+FROM i4Pro_Teste.dbo.corp_endereco  where nr_sequencia= 1
+) as e on e.Id_pessoa = p.Id_pessoa and e.rank= 1
+
+left join --i4Pro_Teste.dbo.corp_endereco e2 on e2.Id_pessoa = p.Id_pessoa and e2.nr_sequencia= 2
+(
+SELECT Id_pessoa, nr_sequencia, id_tp_endereco, nm_endereco, nm_cidade, nm_cep,cd_uf,
+RANK() OVER   (PARTITION BY Id_pessoa  ORDER BY id_endereco,  nr_sequencia ASC ) AS Rank 
+FROM i4Pro_Teste.dbo.corp_endereco where    nr_sequencia= 2
+) as e2 on e2.Id_pessoa = p.Id_pessoa and e2.rank= 1
+
+left join --i4Pro_Teste.dbo.corp_endereco e3 on e3.Id_pessoa = p.Id_pessoa and e3.nr_sequencia= 3
+(
+SELECT Id_pessoa, nr_sequencia, id_tp_endereco, nm_endereco, nm_cidade, nm_cep,cd_uf,
+RANK() OVER   (PARTITION BY Id_pessoa  ORDER BY id_endereco,  nr_sequencia ASC ) AS Rank 
+FROM i4Pro_Teste.dbo.corp_endereco where   nr_sequencia= 3
+) as e3 on e3.Id_pessoa = p.Id_pessoa and e3.rank= 1
+
+left join i4Pro_Teste.dbo.corp_sexo s on s.id_sexo  = p.id_sexo 
+join i4Pro_Teste.dbo.corp_Apolice a on 
+a.id_pessoa_cliente = p.id_pessoa
+) as x
+
+
